@@ -1,0 +1,28 @@
+#!/bin/bash
+# this extracts only the RUDY files from multiple tarballs created from make final_report_issue
+
+destination_folder="evaluate_RUDY"
+
+if [ ! -d "$destination_folder" ]; then
+    mkdir "$destination_folder"
+fi
+
+temp_dir="temp_extraction"
+mkdir -p "$temp_dir"
+
+for tar_file in *.tar.gz; do
+    if [ -f "$tar_file" ]; then
+        tar -xzf "$tar_file" --wildcards --no-anchored \
+            -C "$temp_dir" \
+            '*/reports/*/base/*-rudy.csv' \
+            '*/reports/*/base/*-grt.csv' \
+            '*/reports/*/base/*-rudy.png' \
+            '*/reports/*/base/*-grt.png'
+
+        find "$temp_dir" -type f -exec mv {} "$destination_folder" \;
+    fi
+done
+find "$temp_dir" -type d -empty -delete
+rmdir "$temp_dir"
+
+echo "Extraction complete."
