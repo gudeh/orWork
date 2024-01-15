@@ -1,6 +1,6 @@
 #!/bin/bash
 # script from Matt, adapted to extract all results,logs,reports and objects, as if they were run locally
-# this is usefull if check_rudy must be run from a previous flow execution
+# this is usefull if check_rudy must be run from a previous flow execution.
 metrics=false
 
 while getopts "m" opt; do
