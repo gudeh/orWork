@@ -1,9 +1,8 @@
 import os
 import pandas as pd
 import numpy as np
-from scipy.stats import spearmanr
+from scipy.stats import spearmanr, pearsonr, kendalltau
 import matplotlib.pyplot as plt
-import matplotlib.image as mpimg
 import matplotlib.gridspec as gridspec
 from sklearn.preprocessing import MinMaxScaler
 import warnings
@@ -23,26 +22,19 @@ def calculate_spearman(csv_file_rudy, csv_file_grt, all_values):
         raise ValueError("CSV files do not have the required columns (x0, x1, y0, y1, value).")
 
     spearman_corr, _ = spearmanr(df_rudy['value'], df_grt['value'])
+    pearson_corr, _ = pearsonr(df_rudy['value'], df_grt['value'])
+    kendall_corr, _ = kendalltau(df_rudy['value'], df_grt['value'])
+    r_squared = pearson_corr ** 2
 
     scaler = MinMaxScaler()
-    # remove outliers
-    # min_non_zero_value_grt = df_grt[df_grt['value'] > 0]['value'].min()
-    # df_grt['value'] = df_grt['value'].replace(0, min_non_zero_value_grt)
-    
     df_rudy['value_normalized'] = scaler.fit_transform(df_rudy[['value']])
     df_grt['value_normalized'] = scaler.fit_transform(df_grt[['value']])
 
     common_min = min(df_rudy['value'].min(), df_grt['value'].min())
     common_max = max(df_rudy['value'].max(), df_grt['value'].max())
 
-    
     os.makedirs(output_folder, exist_ok=True)
 
-    # png_file_rudy = os.path.splitext(csv_file_rudy)[0] + '.png'
-    # png_file_grt = os.path.splitext(csv_file_grt)[0] + '.png'
-
-    # img1 = mpimg.imread(png_file_rudy)
-    # img2 = mpimg.imread(png_file_grt)
     png_file_rudy = os.path.splitext(csv_file_rudy)[0] + '.png'
     png_file_grt = os.path.splitext(csv_file_grt)[0] + '.png'
 
@@ -63,29 +55,29 @@ def calculate_spearman(csv_file_rudy, csv_file_grt, all_values):
     fig = plt.figure(figsize=(18, 8))
     gs = gridspec.GridSpec(2, 3, height_ratios=[1, 1], width_ratios=[1, 1, 1])
 
+    counts_rudy, _ = np.histogram(df_rudy['value'], bins=20, range=(0, 150))
+    counts_grt, _ = np.histogram(df_grt['value'], bins=20, range=(0, 150))
+    max_count = max(counts_rudy.max(), counts_grt.max())
+    
     ax0 = plt.subplot(gs[0, 0])
-    ax0.hist(df_rudy['value'], bins=20, color='blue', alpha=0.7, range=(common_min, common_max))
+    ax0.hist(df_rudy['value'], bins=20, color='blue', alpha=0.7, range=(0,150))
     ax0.set_title(f'RUDY: {os.path.basename(csv_file_rudy)}')
+    ax0.set_ylim(0, max_count)
 
     ax1 = plt.subplot(gs[0, 1])
-    ax1.hist(df_grt['value'], bins=20, color='orange', alpha=0.7, range=(common_min, common_max))
+    ax1.hist(df_grt['value'], bins=20, color='orange', alpha=0.7, range=(0,150))
     ax1.set_title(f'GRT: {os.path.basename(csv_file_grt)}')
+    ax1.set_ylim(0, max_count)
 
     ax2 = plt.subplot(gs[0, 2])
     ax2.scatter(df_rudy['value_normalized'], df_grt['value_normalized'], color='green', alpha=0.7)
     ax2.plot([0, 1], [0, 1], color='red', linestyle='--', linewidth=2, label='Identity Line')
-    ax2.set_title(f'Scatter Plot (normalized)\nSpearman: {spearman_corr:.4f}')
+    #ax2.set_title(f'Scatter Plot (normalized)\nSpearman: {spearman_corr:.4f}\nR-squared: {r_squared:.4f}')
+    ax2.set_title(f'Scatter Plot (normalized)\nSpearman: {spearman_corr:.4f}\nR-squared: {r_squared:.4f}\nKendall: {kendall_corr:.4f}')
     ax2.set_xlabel(f'{os.path.basename(csv_file_rudy)}')
     ax2.set_ylabel(f'{os.path.basename(csv_file_grt)}')
     ax2.legend()
 
-    # ax3 = plt.subplot(gs[1, 0])
-    # ax3.imshow(img1)
-    # ax3.axis('off')
-
-    # ax4 = plt.subplot(gs[1, 1])
-    # ax4.imshow(img2)
-    # ax4.axis('off')
     ax3 = plt.subplot(gs[1, 0])
     ax3.imshow(img1_cropped)
     ax3.axis('off')
@@ -104,7 +96,8 @@ def calculate_spearman(csv_file_rudy, csv_file_grt, all_values):
     all_values['rudy'].extend(df_rudy['value'])
     all_values['grt'].extend(df_grt['value'])
 
-    return spearman_corr
+    # return spearman_corr, r_squared
+    return spearman_corr, r_squared, kendall_corr
 
 def process_directory(directory_path):
     files = os.listdir(directory_path)
@@ -134,8 +127,9 @@ def process_directory(directory_path):
                 continue
 
             try:
-                spearman_corr = calculate_spearman(csv_file_rudy, csv_file_grt, all_values)
-                print(f"{common_prefix}: Spearman correlation: {spearman_corr:.4f}")
+                # spearman_corr, r_squared = calculate_spearman(csv_file_rudy, csv_file_grt, all_values)
+                spearman_corr, r_squared, kendall_corr = calculate_spearman(csv_file_rudy, csv_file_grt, all_values)
+                print(f"{common_prefix}: Spearman correlation: {spearman_corr:.4f}, R-squared: {r_squared:.4f}")
                 spearman_values.append(spearman_corr)
             except Exception as e:
                 print(f"Error processing {common_prefix}: {e}")
@@ -152,8 +146,8 @@ def process_directory(directory_path):
     print(f"\nNumber of designs processed: {pair_count}")
 
     fig, ax = plt.subplots(figsize=(12, 6))
-    ax.hist(all_values['rudy'], bins=20, color='blue', alpha=0.7, label='RUDY', range=(0, max(all_values['rudy'])))
-    ax.hist(all_values['grt'], bins=20, color='orange', alpha=0.7, label='GRT', range=(0, max(all_values['grt'])))
+    ax.hist(all_values['rudy'], bins=20, color='blue', alpha=0.7, label='RUDY', range=(0,150))
+    ax.hist(all_values['grt'], bins=20, color='orange', alpha=0.7, label='GRT', range=(0,150))
     ax.set_title('Overall Histogram')
     ax.set_xlabel('Values')
     ax.set_ylabel('Frequency')
