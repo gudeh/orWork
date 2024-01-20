@@ -18,7 +18,7 @@ fi
 my_integer=$1
 
 # Create a directory based on the integer parameter
-directory_name="${my_intger}OpenROAD-flow-scripts"
+directory_name="${my_integer}OpenROAD-flow-scripts"
 
 # Clone the repository into the created directory
 git clone --recursive git@github.com:gudeh/OpenROAD-flow-scripts.git "$directory_name"
