@@ -23,12 +23,22 @@ directory_name="${my_integer}OpenROAD-flow-scripts"
 # Clone the repository into the created directory
 git clone --recursive git@github.com:gudeh/OpenROAD-flow-scripts.git "$directory_name"
 
+cd "./$directory_name"
+
 git remote add upstream git@github.com:The-OpenROAD-Project/OpenROAD-flow-scripts.git
 
 git fetch upstream
 
 git merge upstream/master
 
-cd "$directory_name/tools/OpenRoad"
+cd "./tools/OpenROAD"
 
 git remote add upstream git@github.com:The-OpenROAD-Project/OpenROAD.git
+
+git fetch upstream
+
+git merge upstream/master
+
+cd "../../"
+
+#./build_openroad.sh --local --nice --no_init
