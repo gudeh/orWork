@@ -11,4 +11,6 @@ for pattern in './reports/*/*/base/*-rudy.csv' './reports/*/*/base/*-grt.csv' '.
     find . -path "$pattern" -exec cp {} "$destination_folder" \;
 done
 
+mkdir "$destination_folder/histograms"
+
 echo "Files copied to $destination_folder."

@@ -21,7 +21,7 @@ for tarball in *.tar.gz; do
         if [ "$metrics" = true ]; then
             paths="$prefix/logs $prefix/reports"
         else
-            paths="$prefix/logs $prefix/objects $prefix/reports $prefix/results"
+            paths="$prefix/results "#$prefix/logs $prefix/objects $prefix/reports "
         fi
 
         tar --gzip \
