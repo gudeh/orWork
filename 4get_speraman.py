@@ -72,7 +72,6 @@ def calculate_spearman(csv_file_rudy, csv_file_grt, all_values):
     ax2 = plt.subplot(gs[0, 2])
     ax2.scatter(df_rudy['value_normalized'], df_grt['value_normalized'], color='green', alpha=0.7)
     ax2.plot([0, 1], [0, 1], color='red', linestyle='--', linewidth=2, label='Identity Line')
-    #ax2.set_title(f'Scatter Plot (normalized)\nSpearman: {spearman_corr:.4f}\nR-squared: {r_squared:.4f}')
     ax2.set_title(f'Scatter Plot (normalized)\nSpearman: {spearman_corr:.4f}\nR-squared: {r_squared:.4f}\nKendall: {kendall_corr:.4f}')
     ax2.set_xlabel(f'{os.path.basename(csv_file_rudy)}')
     ax2.set_ylabel(f'{os.path.basename(csv_file_grt)}')
@@ -96,14 +95,14 @@ def calculate_spearman(csv_file_rudy, csv_file_grt, all_values):
     all_values['rudy'].extend(df_rudy['value'])
     all_values['grt'].extend(df_grt['value'])
 
-    # return spearman_corr, r_squared
-    return spearman_corr, r_squared, kendall_corr
+    return os.path.basename(csv_file_rudy), os.path.basename(csv_file_grt), spearman_corr, r_squared, kendall_corr
 
 def process_directory(directory_path):
     files = os.listdir(directory_path)
     csv_files = [file for file in files if file.endswith(('-rudy.csv', '-grt.csv'))]
 
-    spearman_values = []
+    metrics_df = pd.DataFrame(columns=['File_RUDY', 'File_GRT', 'Spearman', 'R_squared', 'Kendall'])
+
     all_values = {'rudy': [], 'grt': []}
     pair_count = 0 
 
@@ -127,23 +126,41 @@ def process_directory(directory_path):
                 continue
 
             try:
-                # spearman_corr, r_squared = calculate_spearman(csv_file_rudy, csv_file_grt, all_values)
-                spearman_corr, r_squared, kendall_corr = calculate_spearman(csv_file_rudy, csv_file_grt, all_values)
-                print(f"{common_prefix}: Spearman correlation: {spearman_corr:.4f}, R-squared: {r_squared:.4f}")
-                spearman_values.append(spearman_corr)
+                file_rudy, file_grt, spearman_corr, r_squared, kendall_corr = calculate_spearman(csv_file_rudy, csv_file_grt, all_values)
+                new_row = pd.DataFrame({
+                    'File_RUDY': [file_rudy], 
+                    'File_GRT': [file_grt], 
+                    'Spearman': [spearman_corr], 
+                    'R_squared': [r_squared], 
+                    'Kendall': [kendall_corr]
+                })
+                metrics_df = pd.concat([metrics_df, new_row], ignore_index=True)
             except Exception as e:
                 print(f"Error processing {common_prefix}: {e}")
 
-    if spearman_values:
-        average_spearman = sum(spearman_values) / len(spearman_values)
-        std_dev_spearman = (sum((x - average_spearman) ** 2 for x in spearman_values) / len(spearman_values)) ** 0.5
+    average_row = pd.DataFrame({
+        'File_RUDY': ['Average'], 
+        'File_GRT': [''], 
+        'Spearman': [metrics_df['Spearman'].mean()], 
+        'R_squared': [metrics_df['R_squared'].mean()], 
+        'Kendall': [metrics_df['Kendall'].mean()]
+    })
 
-        print(f"\nAverage Spearman correlation: {average_spearman:.4f}")
-        print(f"Standard Deviation of Spearman correlation: {std_dev_spearman:.4f}")
-    else:
-        print("\nNo Spearman correlation values found.")
+    std_dev_row = pd.DataFrame({
+        'File_RUDY': ['Standard Deviation'], 
+        'File_GRT': [''], 
+        'Spearman': [metrics_df['Spearman'].std()], 
+        'R_squared': [metrics_df['R_squared'].std()], 
+        'Kendall': [metrics_df['Kendall'].std()]
+    })
 
-    print(f"\nNumber of designs processed: {pair_count}")
+    # Append these rows to the DataFrame
+    metrics_df = pd.concat([metrics_df, average_row, std_dev_row], ignore_index=True)
+
+    # Writing the DataFrame to a CSV file
+    output_csv_file = 'histograms/metrics_summary.csv'
+    metrics_df.to_csv(output_csv_file, index=False)
+    print(f"Metrics summary written to {output_csv_file}")
 
     fig, ax = plt.subplots(figsize=(12, 6))
     ax.hist(all_values['rudy'], bins=20, color='blue', alpha=0.7, label='RUDY', range=(0,150))
