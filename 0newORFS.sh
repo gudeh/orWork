@@ -14,6 +14,10 @@ if ! [[ "$1" =~ ^[0-9]+$ ]]; then
     exit 1
 fi
 
+#
+# TODO: change this so we can use a full name instead of a counter
+#
+
 # Assign the integer parameter to a variable
 my_integer=$1
 
