@@ -1,28 +1,29 @@
 #!/bin/bash
 
 # Check if no parameter is provided
-if [ $# -eq 0 ]; then
-    echo "Error: No integer parameter provided. Please provide an integer."
-    echo "Usage: $0 <integer>"
-    exit 1
+# if [ $# -eq 0 ]; then
+#     echo "Error: No parameter provided. Please provide an integer or a string for the folder name."
+#     echo "Usage: $0 <integer|string>"
+#     exit 1
+# fi
+
+# Function to check if the argument is a valid integer
+is_integer() {
+    [[ "$1" =~ ^[0-9]+$ ]]
+}
+
+# Check if the provided parameter is a valid integer or a string
+if is_integer "$1"; then
+    # It's an integer, use it in the directory name
+    directory_name="${1}OpenROAD-flow-scripts"
+else
+    # It's a string, use it directly as the directory name
+    directory_name="$1"
 fi
 
-# Check if the provided parameter is a valid integer
-if ! [[ "$1" =~ ^[0-9]+$ ]]; then
-    echo "Error: '$1' is not a valid integer. Please provide a valid integer."
-    echo "Usage: $0 <integer>"
-    exit 1
-fi
-
-#
-# TODO: change this so we can use a full name instead of a counter
-#
-
-# Assign the integer parameter to a variable
-my_integer=$1
-
-# Create a directory based on the integer parameter
-directory_name="${my_integer}OpenROAD-flow-scripts"
+# Create a directory based on the parameter
+echo "Creating directory: $directory_name"
+mkdir -p "$directory_name"  # -p to create nested directories if needed
 
 # Clone the repository into the created directory
 git clone --recursive git@github.com:gudeh/OpenROAD-flow-scripts.git "$directory_name"
@@ -31,18 +32,19 @@ cd "./$directory_name"
 
 git remote add upstream git@github.com:The-OpenROAD-Project/OpenROAD-flow-scripts.git
 
-git fetch upstream
+#git fetch upstream
 
-git merge upstream/master
+#git merge upstream/master
 
 cd "./tools/OpenROAD"
 
 git remote add upstream git@github.com:The-OpenROAD-Project/OpenROAD.git
 
-git fetch upstream
+#git fetch upstream
 
-git merge upstream/master
+#git merge upstream/master
 
 cd "../../"
 
-#./build_openroad.sh --local --nice --no_init
+# Uncomment the following line to build OpenROAD after cloning
+# ./build_openroad.sh --local --nice --no_init
