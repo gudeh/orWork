@@ -7,7 +7,6 @@
 #     exit 1
 # fi
 
-# Function to check if the argument is a valid integer
 is_integer() {
     [[ "$1" =~ ^[0-9]+$ ]]
 }
@@ -21,11 +20,9 @@ else
     directory_name="$1"
 fi
 
-# Create a directory based on the parameter
 echo "Creating directory: $directory_name"
-mkdir -p "$directory_name"  # -p to create nested directories if needed
+mkdir -p "$directory_name" 
 
-# Clone the repository into the created directory
 git clone --recursive git@github.com:gudeh/OpenROAD-flow-scripts.git "$directory_name"
 
 cd "./$directory_name"
@@ -46,5 +43,4 @@ git remote add upstream git@github.com:The-OpenROAD-Project/OpenROAD.git
 
 cd "../../"
 
-# Uncomment the following line to build OpenROAD after cloning
 # ./build_openroad.sh --local --nice --no_init

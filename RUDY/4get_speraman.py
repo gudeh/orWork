@@ -154,10 +154,8 @@ def process_directory(directory_path):
         'Kendall': [metrics_df['Kendall'].std()]
     })
 
-    # Append these rows to the DataFrame
     metrics_df = pd.concat([metrics_df, average_row, std_dev_row], ignore_index=True)
 
-    # Writing the DataFrame to a CSV file
     output_csv_file = 'histograms/metrics_summary.csv'
     metrics_df.to_csv(output_csv_file, index=False)
     print(f"Metrics summary written to {output_csv_file}")

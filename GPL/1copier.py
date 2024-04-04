@@ -7,23 +7,19 @@ def copy_files_from_sources_to_separate_dest(src_roots, dest_root_base):
         path_parts = src_root.strip('/').split('/')
         # Ensure there are enough parts in the path to extract the desired segment
         if len(path_parts) >= 5:
-            src_identifier = path_parts[3]  # This gets the name between the 4th and 5th '/'
+            src_identifier = path_parts[3]
         else:
             print(f"Invalid source path, not enough segments to extract identifier: {src_root}")
-            continue  # Skip this source root due to invalid path structure
+            continue
         
         dest_root = os.path.join(dest_root_base, src_identifier)
-
-        # Create the destination root directory if it doesn't exist
         if not os.path.exists(dest_root):
             os.makedirs(dest_root)
 
-        # Check if the source root exists to prevent errors
         if not os.path.exists(src_root):
             print(f"Source root not found: {src_root}")
             continue
         
-        # Iterate through each directory in the first layer of the current source root
         for folder in os.listdir(src_root):
             folder_path = os.path.join(src_root, folder)
             
@@ -47,5 +43,5 @@ src_roots = [
     '/home/gudeh/Desktop/2OpenROAD-flow-scripts/flow/logs/',
     '/home/gudeh/Desktop/1OpenROAD-flow-scripts/flow/logs/'
 ]
-dest_root = './'  # Make sure to specify a destination directory here
+dest_root = './'
 copy_files_from_sources_to_separate_dest(src_roots, dest_root)

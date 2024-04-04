@@ -5,13 +5,13 @@ from collections import defaultdict
 
 def process_log_file(log_file_path):
     iteration_number = None
-    metadata_status = "ERROR"  # Default status if the file is found but no relevant messages are found
+    metadata_status = "ERROR"
     iteration_pattern = r"(\d+)(st|nd|rd|th) optimization iteration"
     metadata_pass_pattern = "All metadata rules passed"
     metadata_fail_pattern = "Failed metadata check"
 
     if not os.path.exists(log_file_path):
-        return None, ""  # No iterations and empty status if file is not found
+        return None, ""
 
     with open(log_file_path, 'r') as file:
         lines = file.readlines()
@@ -58,26 +58,22 @@ def write_to_csv(data, output_file):
             run_configs.update(run_config_dict.keys())
         run_configs = sorted(run_configs)
 
-        # Create headers for each run configuration, with 'Iterations' and 'Status' as separate columns.
         headers = ['Design Name', 'Technology']
         for rc in run_configs:
-            headers.extend([f'{rc} Iterations', f'{rc} Status'])  # Append pairs of headers for each run configuration
+            headers.extend([f'{rc} Iterations', f'{rc} Status']) 
         writer.writerow(headers)
 
         for (design_name, technology), run_config_data in data.items():
             row = [design_name, technology]
             for rc in run_configs:
                 rc_data = run_config_data.get(rc, {'Iterations': [''], 'Status': ''})
-                # Make sure to convert None or list to a string, if needed.
                 iterations = rc_data['Iterations'][0] if rc_data['Iterations'] else ''
                 status = rc_data['Status'] if rc_data['Status'] is not None else ''
-                row.extend([iterations, status])  # Extend the row with iterations and status as a pair
+                row.extend([iterations, status])
             writer.writerow(row)
 
 
-
-# Usage
-base_path = '.'  # Current directory
+base_path = '.'
 output_file = 'output.csv'
 data = process_directories(base_path)
 write_to_csv(data, output_file)
