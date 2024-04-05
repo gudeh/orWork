@@ -1,3 +1,6 @@
+# You need to manually set the paths of the log directories.
+# And manually change the position of 'path_parts' (between '/') of the name of each output directory inside the input path
+
 import os
 import shutil
 
