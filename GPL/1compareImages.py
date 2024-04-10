@@ -1,6 +1,9 @@
 import os
 from PIL import Image, ImageDraw, ImageFont
 
+# input files comes from the 2callRudy + 3copyRUDYresults
+
+
 def get_subdirectories(a_dir):
     return [os.path.join(a_dir, name) for name in os.listdir(a_dir)
             if os.path.isdir(os.path.join(a_dir, name))]
