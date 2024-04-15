@@ -9,12 +9,14 @@ def process_log_file(log_file_path):
     iteration_pattern = r"(\d+)(st|nd|rd|th) optimization iteration"
     metadata_pass_pattern = "All metadata rules passed"
     metadata_fail_pattern = "Failed metadata check"
+    error_pattern = re.compile(r"error", re.IGNORECASE)
 
     if not os.path.exists(log_file_path):
         return None, ""
 
     with open(log_file_path, 'r') as file:
         lines = file.readlines()
+        status_found = False
         for line in reversed(lines):
             if iteration_number is None:
                 match = re.search(iteration_pattern, line)
@@ -23,8 +25,20 @@ def process_log_file(log_file_path):
 
             if metadata_pass_pattern in line:
                 metadata_status = "OK"
+                status_found = True
+                # break
             elif metadata_fail_pattern in line:
                 metadata_status = "FAIL"
+                status_found = True
+                # break      
+
+        if not status_found:
+            # Search for the word "error" and remove commas from the line
+            for line in lines:
+                if error_pattern.search(line):
+                    clean_line = line.strip().replace(',', '')  # Remove commas from the line
+                    metadata_status = clean_line
+                    break
 
     return iteration_number, metadata_status
 
@@ -72,8 +86,8 @@ def write_to_csv(data, output_file):
                 row.extend([iterations, status])
             writer.writerow(row)
 
-
 base_path = '.'
 output_file = 'output.csv'
 data = process_directories(base_path)
 write_to_csv(data, output_file)
+
