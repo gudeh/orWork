@@ -1,46 +1,63 @@
 #!/bin/bash
 
-# Check if no parameter is provided
-# if [ $# -eq 0 ]; then
-#     echo "Error: No parameter provided. Please provide an integer or a string for the folder name."
-#     echo "Usage: $0 <integer|string>"
-#     exit 1
-# fi
-
 is_integer() {
     [[ "$1" =~ ^[0-9]+$ ]]
 }
 
-# Check if the provided parameter is a valid integer or a string
+get_git_remote() {
+    local remote_type="${1:-upstream}"  # Default to 'upstream' if empty
+    case "$remote_type" in
+        origin)
+            echo "git@github.com:gudeh/OpenROAD-flow-scripts.git"
+            ;;
+        private)
+            echo "git@github.com:The-OpenROAD-Project-private/OpenROAD-flow-scripts.git"
+            ;;
+        *)  # Default is upstream
+            echo "git@github.com:The-OpenROAD-Project/OpenROAD-flow-scripts.git"
+            ;;
+    esac
+}
+
+get_git_sub_remote() {
+    local remote_type="${1:-upstream}"  # Default to 'upstream' if empty
+    case "$remote_type" in
+        origin)
+            echo "git@github.com:gudeh/OpenROAD.git"
+            ;;
+        private)
+            echo "git@github.com:The-OpenROAD-Project-private/OpenROAD.git"
+            ;;
+        *)  # Default is upstream
+            echo "git@github.com:The-OpenROAD-Project/OpenROAD.git"
+            ;;
+    esac
+}
+
+# Validate and set directory name
 if is_integer "$1"; then
-    # It's an integer, use it in the directory name
     directory_name="${1}OpenROAD-flow-scripts"
 else
-    # It's a string, use it directly as the directory name
     directory_name="$1"
 fi
 
-echo "Creating directory: $directory_name"
-mkdir -p "$directory_name" 
+# Clone the repository
+main_remote=$(get_git_remote "$2")
+echo "Cloning into $directory_name from $main_remote"
+git clone --recursive "$main_remote" "$directory_name"
 
-git clone --recursive git@github.com:gudeh/OpenROAD-flow-scripts.git "$directory_name"
-
+# Navigate to the cloned directory
 cd "./$directory_name"
 
-git remote add upstream git@github.com:The-OpenROAD-Project/OpenROAD-flow-scripts.git
-
-#git fetch upstream
-
-#git merge upstream/master
+# Fetch all changes and prune any stale branches
+git fetch --all --prune
 
 cd "./tools/OpenROAD"
 
-git remote add upstream git@github.com:The-OpenROAD-Project/OpenROAD.git
+# If separate repository handling is necessary, fetch and prune here as well
+git fetch --all --prune
 
-#git fetch upstream
+cd "../../../"
 
-#git merge upstream/master
-
-cd "../../"
-
-# ./build_openroad.sh --local --nice --no_init
+# Further commands to build or set up the environment
+# ./build_openroad.sh --local --nice --no_init 
