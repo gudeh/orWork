@@ -9,8 +9,8 @@ def copy_files_from_sources_to_separate_dest(src_roots, dest_root_base):
         # Split the path and extract the unique name/identifier between the 4th and 5th '/'
         path_parts = src_root.strip('/').split('/')
         # Ensure there are enough parts in the path to extract the desired segment
-        if len(path_parts) >= 5:
-            src_identifier = path_parts[3]
+        if len(path_parts) >= 2:
+            src_identifier = path_parts[2]
         else:
             print(f"Invalid source path, not enough segments to extract identifier: {src_root}")
             continue
@@ -38,13 +38,17 @@ def copy_files_from_sources_to_separate_dest(src_roots, dest_root_base):
                     if os.path.isfile(item_path):
                         shutil.copy2(item_path, dest_folder_path)
 
-src_roots = [
-    '/home/gudeh/Desktop/inflatIter3/flow/logs',
-    '/home/gudeh/Desktop/targetRC08/flow/logs/',
-    '/home/gudeh/Desktop/targetRC125/flow/logs/',
-    '/home/gudeh/Desktop/3OpenROAD-flow-scripts/flow/logs/',
-    '/home/gudeh/Desktop/2OpenROAD-flow-scripts/flow/logs/',
-    '/home/gudeh/Desktop/1OpenROAD-flow-scripts/flow/logs/'
-]
+base_path = '../sourceData/'
+directories = [d for d in os.listdir(base_path) if os.path.isdir(os.path.join(base_path, d))]
+src_roots = []
+
+if directories:
+    for directory_name in directories:
+        src_roots.append(os.path.join(base_path, directory_name, 'logs/'))
+else:
+    print("No directories found.")
+
+print("src_roots", src_roots)
+                        
 dest_root = './'
 copy_files_from_sources_to_separate_dest(src_roots, dest_root)
