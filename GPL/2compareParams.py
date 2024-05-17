@@ -6,10 +6,10 @@ from collections import defaultdict
 def process_log_file(log_file_path):
     iteration_number = None
     metadata_status = "ERROR"
-    cpu_time = None
+    cpu_time = None  # This will be in minutes
     violations = None
-    first_iteration_violations = None  # Variable to store violations from the first iteration
-    global_placer_cpu_time = None
+    first_iteration_violations = None
+    global_placer_cpu_time = None  # This will be in minutes
     last_num_call = None
     iteration_pattern = r"(\d+)(st|nd|rd|th) optimization iteration"
     metadata_pass_pattern = "All metadata rules passed"
@@ -30,9 +30,9 @@ def process_log_file(log_file_path):
 
         for line in lines:
             if 'Start 0th optimization iteration.' in line:
-                in_first_iteration = True  # Start capturing data for the first iteration
+                in_first_iteration = True
             elif 'Start' in line and 'optimization iteration' in line and '0th' not in line:
-                in_first_iteration = False  # Stop capturing after the first iteration ends
+                in_first_iteration = False
 
             if in_first_iteration:
                 if first_iteration_violations is None:
@@ -56,7 +56,8 @@ def process_log_file(log_file_path):
             if cpu_time is None:
                 cpu_match = cpu_time_pattern.search(line)
                 if cpu_match:
-                    cpu_time = cpu_match.group(2)
+                    h, m, s = map(int, cpu_match.group(2).split(':'))
+                    cpu_time = '{:.2f}'.format(h * 60 + m + s / 60.0)
 
             if violations is None:
                 violation_match = violation_pattern.search(line)
@@ -68,7 +69,6 @@ def process_log_file(log_file_path):
                 if num_call_match:
                     last_num_call = num_call_match.group(1)
 
-        # Handle section specific to global placer CPU time
         in_global_placer_section = False
         for line in lines:
             if global_placer_start_pattern.search(line):
@@ -76,7 +76,8 @@ def process_log_file(log_file_path):
             elif in_global_placer_section:
                 placer_cpu_match = cpu_time_global_placer_pattern.search(line)
                 if placer_cpu_match:
-                    global_placer_cpu_time = placer_cpu_match.group(1)
+                    seconds = float(placer_cpu_match.group(1))
+                    global_placer_cpu_time = '{:.2f}'.format(seconds / 60)
                     break
 
         if not status_found and violations is None:
@@ -120,7 +121,7 @@ def write_to_csv(data, output_file):
         run_configs = set()
         for run_config_dict in data.values():
             run_configs.update(run_config_dict.keys())
-        run_configs = sorted(run_configs, key=lambda x: ("standard" not in x.lower(), x))
+        run_configs = sorted(run_configs, key=lambda x: ('nightly' not in x.lower(), 'standard' not in x.lower(), x))
 
         headers_top = [''] * 2
         headers_middle = [''] * 2
@@ -144,7 +145,6 @@ def write_to_csv(data, output_file):
                 global_placer_cpu_time = rc_data['Global Placer CPU Time']
                 last_num_call = rc_data['Last NumCall']
                 first_iteration_violations = rc_data['0th DRT Iteration Violations']
-                # Note the change in order here to match new header positions
                 row.extend([first_iteration_violations, iterations, status, cpu_time, violations, global_placer_cpu_time, last_num_call])
             writer.writerow(row)
 
