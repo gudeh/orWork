@@ -140,11 +140,11 @@ Commonly we first merge a PR on OR, generally following these steps:
 
 
 1. Create a PR for OR.
-    1. If regression test fail update on this branch using _save_flow_metrics_ and _save_flow_metrics_limits_.
+   1. If regression test fail update on this branch using _save_flow_metrics_ and _save_flow_metrics_limits_.
 2. Run a secure-CI for this OR PR.
-    2. If we get a small fail in the metrics, we can just update that metric, for that we’ll need an ORFS PR that does two things:
-        1. Update the metrics according to our changes in our OR PR.
-        2. Points to the current commit in our OR PR (so that nightly public CI does not break).
+   1. If we get a small fail in the metrics, we can just update that metric, for that we’ll need an ORFS PR that does two things:
+      1. Update the metrics according to our changes in our OR PR.
+      2. Points to the current commit in our OR PR (so that nightly public CI does not break).
 3. Merge this OR PR.
 4. Merge the ORFS PR.
 
