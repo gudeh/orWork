@@ -73,7 +73,7 @@ This document was prepared by Augusto Berndt, starting from an initial version b
 
 * To avoid bad words and other security-related problems, we have a repository that performs checks on every commit you create
     * Clone this repository: [https://github.com/The-OpenROAD-Project/security](https://github.com/The-OpenROAD-Project/security)
-    * Then run: git config --local core.hooksPath _/path/to/security**/git/hooks_**
+    * Then run: git config --local core.hooksPath _/path/to/security/git/hooks_
 * C++ code has to be formatted in clang-format. For example, the following will format the code inplace:
     * _clang-format -i /src/gpl/src/replace.cpp_
 * Use snake case for variables, and camel case for functions.
