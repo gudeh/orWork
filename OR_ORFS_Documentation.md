@@ -116,7 +116,7 @@ Both pairs have their own set of tests to be performed when code is updated.
         * **Metrics fail:** happen when the run converges to the end, although some metrics metadata are not within the limiting range. This can be accessed at the end of the log file from the _/flow/test/test_helper.sh_ script, for example: _[ERROR] finish__timing__drv__hold_violation_count fail test: 133.0 &lt;= 100.0_.
             * This metadata report is achieved with the command _make metadata_,included in the _test_helper.sh_ script.
             * When metrics metadata fail  you should check the values, if the difference is controlled, we usually update the metrics along the code modifications. This document contains further instructions on metrics update.
-        * **Impeditive errors: **are the ones that do not allow the run to reach the end, such as segmentation faults, or failings during unit tests.
+        * **Impeditive errors:** are the ones that do not allow the run to reach the end, such as segmentation faults, or failings during unit tests.
 
              
 
@@ -160,7 +160,7 @@ Use case of _save_flow_metrics_ and _save_flow_metrics_limits:_
 
 * Download test results from artifacts tab in jenkins run: _/test/results.tgz_.
 * Extract the files to /_tools/Openroad/test/results/_ for failing metric designs in the local directory. For example, if the failing design is _ibex/sky130hd_, you may unzip all files starting with _ibex_sky130hd_ in _/test/results/_ to the same path in your local directory.
-    * **Alternatively **to these two previous steps, you can run locally to generate the required files.
+    * **Alternatively** to these two previous steps, you can run locally to generate the required files.
 * cd to _/tools/Openroad/test_, run _./save_flow_metrics \[design\]\_\[pdk\]_, for example: _./save_flow_metrics ibex_sky130hd_.
 * Also run _./save_flow_metrics_limits \[design\]\_\[pdk\]_.
 * You can check if modifications were performed with _git status_,and push them.
