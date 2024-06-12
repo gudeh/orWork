@@ -61,7 +61,7 @@ This document was prepared by Augusto Berndt, starting from an initial version b
         * git add &lt;modified_files>
         * git commit -s -m “&lt;commit message>”
             * Make sure to always include your signature, this is what the “-s” parameter does!
-            * Commit message on the OR tool should start with an acronym of the tool being modified. For example if modifications are made in global placer the commit message should start with “_gpl:”, _such as “_gpl: this modifications does this and that._” This is not a requirement on ORFS.
+            * Commit message on the OR tool should start with an acronym of the tool being modified. For example if modifications are made in global placer the commit message should start with “_gpl:”_,such as “_gpl: this modifications does this and that._” This is not a requirement on ORFS.
     * Push your new branch to your fork
         * git push my_fork &lt;branch_name>
 * To create a PR, use the GitHub interface 
@@ -73,7 +73,7 @@ This document was prepared by Augusto Berndt, starting from an initial version b
 
 * To avoid bad words and other security-related problems, we have a repository that performs checks on every commit you create
     * Clone this repository: [https://github.com/The-OpenROAD-Project/security](https://github.com/The-OpenROAD-Project/security)
-    * Then run: git config --local core.hooksPath _/path/to/security**/git/hooks **_
+    * Then run: git config --local core.hooksPath _/path/to/security**/git/hooks_**
 * C++ code has to be formatted in clang-format. For example, the following will format the code inplace:
     * _clang-format -i /src/gpl/src/replace.cpp_
 * Use snake case for variables, and camel case for functions.
@@ -113,8 +113,8 @@ Both pairs have their own set of tests to be performed when code is updated.
 * When tests fail make sure to understand what is happening. Here are some situations and steps to follow:
     * If tests fail on the master branch (nightly build) the same way as they do on your branch, they should not be your fault.
     * Differentiate between actual impeditive errors from simpler metrics failing.
-        * **Metrics fail:** happen when the run converges to the end, although some metrics metadata are not within the limiting range. This can be accessed at the end of the log file from the _/flow/test/test_helper.sh _script, for example: _[ERROR] finish__timing__drv__hold_violation_count fail test: 133.0 &lt;= 100.0_.
-            * This metadata report is achieved with the command _make metadata, _included in the _test_helper.sh _script.
+        * **Metrics fail:** happen when the run converges to the end, although some metrics metadata are not within the limiting range. This can be accessed at the end of the log file from the _/flow/test/test_helper.sh_ script, for example: _[ERROR] finish__timing__drv__hold_violation_count fail test: 133.0 &lt;= 100.0_.
+            * This metadata report is achieved with the command _make metadata_,included in the _test_helper.sh_ script.
             * When metrics metadata fail  you should check the values, if the difference is controlled, we usually update the metrics along the code modifications. This document contains further instructions on metrics update.
         * **Impeditive errors: **are the ones that do not allow the run to reach the end, such as segmentation faults, or failings during unit tests.
 
@@ -127,7 +127,7 @@ Both pairs have their own set of tests to be performed when code is updated.
 
 * Some instructions can be found here: https://github.com/The-OpenROAD-Project-private/internal-documentation/blob/master/secure-ci.md
 * Push the branch you want to test to the repository The-OpenROAD-Project-private/OpenROAD
-* Create a **secure-&lt;branch_name> **branch on the repository The-OpenROAD-Project-private/OpenROAD-flow-scripts
+* Create a **secure-&lt;branch_name>** branch on the repository The-OpenROAD-Project-private/OpenROAD-flow-scripts
 * Update the submodule under tools/OpenROAD to the branch you created in the first step
 * Push these updates to the private flow scripts repository and check the results in the
 
@@ -152,18 +152,18 @@ Commonly we first merge a PR on OR, generally following these steps:
 
 The OR tool has regression tests located at _/tools/OpenRoad/test/_. For changes that generate new results, if a new correct result needs to be incorporated in the OR by updating the required files. 
 
-For example, on one hand gpl might use regression tests that use metrics for actual designs as their results, within that context we would need to use the following scripts. On the other hand a different tool such as mpl2 might use just a def as a target result for the test, which would be updated by using the script _save_defok, save_ok, _and among others.
+For example, on one hand gpl might use regression tests that use metrics for actual designs as their results, within that context we would need to use the following scripts. On the other hand a different tool such as mpl2 might use just a def as a target result for the test, which would be updated by using the script _save_defok, save_ok_,and among others.
 
-Use case of _save_flow_metrics _and _save_flow_metrics_limits:_
+Use case of _save_flow_metrics_ and _save_flow_metrics_limits:_
 
 
 
 * Download test results from artifacts tab in jenkins run: _/test/results.tgz_.
 * Extract the files to /_tools/Openroad/test/results/_ for failing metric designs in the local directory. For example, if the failing design is _ibex/sky130hd_, you may unzip all files starting with _ibex_sky130hd_ in _/test/results/_ to the same path in your local directory.
     * **Alternatively **to these two previous steps, you can run locally to generate the required files.
-* cd to /_tools/Openroad/test, _run _./save_flow_metrics [design]_[pdk]_, for example: _./save_flow_metrics ibex_sky130hd _.
-* Also run ./_save_flow_metrics_limits [design]_[pdk]_.
-* You can check if modifications were performed with _git status, _and push them.
+* cd to _/tools/Openroad/test_, run _./save_flow_metrics \[design\]\_\[pdk\]_, for example: _./save_flow_metrics ibex_sky130hd_.
+* Also run _./save_flow_metrics_limits \[design\]\_\[pdk\]_.
+* You can check if modifications were performed with _git status_,and push them.
 
 **Updating metrics on ORFS**
 
@@ -199,34 +199,34 @@ Here are some general steps to create a new unit test following the older format
     * SAVE: You can pack a run from your flow directory with the command:
         * _make DESIGN_CONFIG=./designs/nangate45/gcd/config.mk final_report_issue_
             * This creates a tar file with necessary files to run the design again in another directory or computer.
-        * Alternatively you can generate a report issue for any other step other than the “final” step, for example: _make global_place_issue. _You can check the options by typing make and pressing tab a few times.
-        * You may use _make clean_issues_, to remove files generated by the report_issue.
+        * Alternatively you can generate a report issue for any other step other than the “final” step, for example: _make global_place_issue_. You can check the options by typing make and pressing tab a few times.
+        * You may use _make clean_issues_, to remove files generated by the _report_issue_.
     * LOAD: You can load a run by unpacking the report_issue in a flow directory and use the following command:
-        * _./run-me-gcd-nangate45-base.sh _(this is useful to replicate a specific step)
+        * _./run-me-gcd-nangate45-base.sh_ (this is useful to replicate a specific step)
             * You can also add the -gui parameter inside the run-me bash script.
-        * Or do _source vars-gcd-nangate45-base.sh, _and use the _make_ command normally.
+        * Or do _source vars-gcd-nangate45-base.sh_,and use the _make_ command normally.
 * Using **ODB** files.
     * SAVE: You can also export a run by saving the ODB file.
-    * LOAD: And load the run with the ODB file: you can open the tool with _openroad -gui_, and load the ODB file with the _read_odb _command, this can also be done on the gui (with the mouse) going in File→open DB, then selecting the ODB file.
+    * LOAD: And load the run with the ODB file: you can open the tool with _openroad -gui_, and load the ODB file with the _read_odb_ command, this can also be done on the gui (with the mouse) going in File→open DB, then selecting the ODB file.
         * ODB files are usually located at _/flow/results/nangate45/gdc/base._
 * Usually each tool step has a debugger option. To run it you can add the command to the script file of the tool.
 * There is a script to unpack multiple packages.
 
 **Clean runs on ORFS**
 
-**_make clean_issue _**- removes files generated by the report_issue command
+**make clean_issue**- removes files generated by the report_issue command
 
-**_make clean_metadata _**- removes the metadata resulting files generated by a run. This clean is tied to a single design run.
+**make clean_metadata**- removes the metadata resulting files generated by a run. This clean is tied to a single design run.
 
-**_make clean_all _**- removes files generated by a run in the directories: logs, reports, results. This clean is tied to a single design run.
+**make clean_all**- removes files generated by a run in the directories: logs, reports, results. This clean is tied to a single design run.
 
-**_make nuke _**- removes all runs of all designs from the flow directory.
+**make nuke**- removes all runs of all designs from the flow directory.
 
 **Debug mode**
 
 
 
-* Usually the ools have a debugger mode, for example, GPL can show iteratively the instances moving to their places in the core area. You can find instructions on the README file of each step tool, for example GPL has instructions for the debugger mode in _/tools/OpenROAD/src/gpl/README.md_. You can also investigate on the swig file for the tool in a file ending with _.i, _for example: _/tools/OpenROAD/src/gpl/replace.i_. 
+* Usually the ools have a debugger mode, for example, GPL can show iteratively the instances moving to their places in the core area. You can find instructions on the README file of each step tool, for example GPL has instructions for the debugger mode in _/tools/OpenROAD/src/gpl/README.md_. You can also investigate on the swig file for the tool in a file ending with _.i_ for example: _/tools/OpenROAD/src/gpl/replace.i_. 
     * It is recommended to use report_issue method to load the design and add -gui to run-me to use the debugger mode. The debugger mode usually interacts with the gui, so you need to make sure to run the tool with the -gui command somehow.
 
 **Gcloud**
@@ -274,8 +274,8 @@ Here are some general steps to create a new unit test following the older format
 
 * Swig files (ending with .i) are responsible for interfacing between TCL commands and C++ code, such as between ORFS and OR. 
 * On Jenkins blue ocean, after a run is finished, you can go to artifacts and click on the Report, which has a summary with processed and organized information about the run.
-* You can use _sudo ./etc/DependencyInstaller.sh, _this will install the necessary packages on _/usr/bin/._ This might be required to use multiple ORFS repositories on the same computer.
-* Use environment variable _make FLOW_VARIANT=[string]_ to save ORFS results in a directory called _string_, instead of the “base” default directory name.
-* Select certain instances on the GUI: _select -type Inst -filter {Description=Sequential cell}, _or _{Description=Macro}. _[More info here](https://github.com/The-OpenROAD-Project/OpenROAD/tree/master/src/gui#select-objects).
+* You can use _sudo ./etc/DependencyInstaller.sh_, this will install the necessary packages on _/usr/bin/._ This might be required to use multiple ORFS repositories on the same computer.
+* Use environment variable _make FLOW_VARIANT=\[string\]_ to save ORFS results in a directory called _string_, instead of the “base” default directory name.
+* Select certain instances on the GUI: _select -type Inst -filter {Description=Sequential cell}_ or _{Description=Macro}._ [More info here](https://github.com/The-OpenROAD-Project/OpenROAD/tree/master/src/gui#select-objects).
 * To make sure you run the same version of secure-CI locally. Check the ORFS commit hash in jenkins versus yours with git log. Check OR version on a log file in jenkins versus yours locally. Build using: _./build_openroad --local_
 * You can change the location of an instance from the DEF file.
