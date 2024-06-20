@@ -27,8 +27,8 @@ def calculate_spearman(csv_file_rudy, csv_file_grt, all_values):
     r_squared = pearson_corr ** 2
 
     scaler = MinMaxScaler()
-    df_rudy['value_normalized'] = scaler.fit_transform(df_rudy[['value']])
-    df_grt['value_normalized'] = scaler.fit_transform(df_grt[['value']])
+    # df_rudy['value_normalized'] = scaler.fit_transform(df_rudy[['value']])
+    # df_grt['value_normalized'] = scaler.fit_transform(df_grt[['value']])
 
     common_min = min(df_rudy['value'].min(), df_grt['value'].min())
     common_max = max(df_rudy['value'].max(), df_grt['value'].max())
@@ -70,9 +70,11 @@ def calculate_spearman(csv_file_rudy, csv_file_grt, all_values):
     ax1.set_ylim(0, max_count)
 
     ax2 = plt.subplot(gs[0, 2])
-    ax2.scatter(df_rudy['value_normalized'], df_grt['value_normalized'], color='green', alpha=0.7)
+    # ax2.scatter(df_rudy['value_normalized'], df_grt['value_normalized'], color='green', alpha=0.7)
+    ax2.scatter(df_rudy['value'], df_grt['value'], color='green', alpha=0.7)
     ax2.plot([0, 1], [0, 1], color='red', linestyle='--', linewidth=2, label='Identity Line')
-    ax2.set_title(f'Scatter Plot (normalized)\nSpearman: {spearman_corr:.4f}\nR-squared: {r_squared:.4f}\nKendall: {kendall_corr:.4f}')
+    # ax2.set_title(f'Scatter Plot (normalized)\nSpearman: {spearman_corr:.4f}\nR-squared: {r_squared:.4f}\nKendall: {kendall_corr:.4f}')
+    ax2.set_title(f'Scatter Plot\nSpearman: {spearman_corr:.4f}\nR-squared: {r_squared:.4f}\nKendall: {kendall_corr:.4f}')
     ax2.set_xlabel(f'{os.path.basename(csv_file_rudy)}')
     ax2.set_ylabel(f'{os.path.basename(csv_file_grt)}')
     ax2.legend()
