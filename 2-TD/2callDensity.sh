@@ -1,16 +1,9 @@
 #!/bin/bash
 
+set -e
+
 DESIGNS_DIR="./designs"
 MAX_JOBS=3
-
-function run_command {
-    command=$1
-    eval $command
-    if [ $? -ne 0 ]; then
-        echo "Command failed: $command"
-        exit 1
-    fi
-}
 
 for platform in "$DESIGNS_DIR"/*; do
     if [ -d "$platform" ]; then
@@ -22,15 +15,15 @@ for platform in "$DESIGNS_DIR"/*; do
                 design_name=$(basename "$design")
 		
                 command="make check_density STAGE=3_3_place_gp DESIGN_CONFIG=\"$DESIGNS_DIR/$platform_name/$design_name/config.mk\""
-                run_command "$command" &
+                eval $command &
                 echo -e "\n->$command"
 		
                 command="make check_density STAGE=3_4_place_resized DESIGN_CONFIG=\"$DESIGNS_DIR/$platform_name/$design_name/config.mk\""
-                run_command "$command" &
+                eval $command &
                 echo -e "\n->$command"
 
-                command="make check_density STAGE=3_5_place_dp DESIGN_CONFIG=\"$DESIGNS_DIR/$platform_name/$design_name/config.mk\""
-                run_command "$command" &
+		command="make check_density STAGE=3_5_place_dp DESIGN_CONFIG=\"$DESIGNS_DIR/$platform_name/$design_name/config.mk\""
+                eval $command &
                 echo -e "\n->$command"
                 let jobs+=1
 		
