@@ -1,14 +1,21 @@
-# You need to manually set the paths of the log directories.
-# And manually change the position of 'path_parts' (between '/') of the name of each output directory inside the input path
-
 import os
 import shutil
+import json
+
+def merge_json_files(json_files, output_path):
+    merged_data = {}
+    
+    for json_file in json_files:
+        with open(json_file, 'r') as file:
+            data = json.load(file)
+            merged_data.update(data)
+    
+    with open(output_path, 'w') as output_file:
+        json.dump(merged_data, output_file, indent=4)
 
 def copy_files_from_sources_to_separate_dest(src_roots, dest_root_base):
     for src_root in src_roots:
-        # Split the path and extract the unique name/identifier between the 4th and 5th '/'
         path_parts = src_root.strip('/').split('/')
-        # Ensure there are enough parts in the path to extract the desired segment
         if len(path_parts) >= 2:
             src_identifier = path_parts[2]
         else:
@@ -37,6 +44,16 @@ def copy_files_from_sources_to_separate_dest(src_roots, dest_root_base):
                     
                     if os.path.isfile(item_path):
                         shutil.copy2(item_path, dest_folder_path)
+                        
+                        if item.endswith(".log"):
+                            log_name = os.path.splitext(item)[0]
+                            log_subdir = os.path.join(folder_path, log_name)  # Add the log name to the path
+                            base_directory = os.path.join(log_subdir, 'base')
+                            if os.path.exists(base_directory) and os.path.isdir(base_directory):
+                                json_files = [os.path.join(base_directory, f) for f in os.listdir(base_directory) if f.endswith(".json")]
+                                if json_files:
+                                    merged_json_path = os.path.join(dest_folder_path, f"{log_name}.json")
+                                    merge_json_files(json_files, merged_json_path)
 
 base_path = '../sourceData/'
 directories = [d for d in os.listdir(base_path) if os.path.isdir(os.path.join(base_path, d))]
