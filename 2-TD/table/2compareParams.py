@@ -2,6 +2,7 @@ import os
 import re
 import csv
 from collections import defaultdict
+import json
 
 SHOW_GPL = True
 SHOW_DRT = False
@@ -140,11 +141,21 @@ def process_log_file(log_file_path):
 
     return drt_iteration_number, drt_metadata_status, drt_cpu_time, drt_violations, gpl_cpu_time, gpl_cpu_time_seconds, gpl_last_num_call, drt_first_iteration_violations, gpl_iterations, gpl_last_tns, rsz_tns, starting_inst_area, starting_num_instances, total_resized_gates, total_inserted_buffers
 
+def process_json_file(json_file_path):
+    with open(json_file_path, 'r') as file:
+        data = json.load(file)
+        instance_area = data.get("globalplace__design__instance__area", None)
+        cts_tns = data.get("cts__timing__setup__tns", None)
+        finish_tns = data.get("finish__timing__setup__tns", None)
+        end_instance_count = data.get("globalplace__design__instance__count", None)
+        return instance_area, cts_tns, finish_tns, end_instance_count
+
 def process_directories(base_path):
     data = defaultdict(lambda: defaultdict(lambda: {
         'gpl_iterations': None, 'drt_iterations': [], 'drt_status': None, 'drt_cpu_time': None, 'drt_violations': None,
         'gpl_cpu_time': None, 'gpl_cpu_time_seconds': None, 'gpl_last_num_call': None, 'drt_first_iteration_violations': None, 'gpl_last_tns': None, 'rsz_tns': None,
-        'starting_inst_area': None, 'starting_num_instances': None, 'total_resized_gates': 0, 'total_inserted_buffers': 0
+        'starting_inst_area': None, 'starting_num_instances': None, 'total_resized_gates': 0, 'total_inserted_buffers': 0,
+        'end_instance_area': None, 'cts_tns': None, 'finish_tns': None, 'end_instance_count': None  # New fields
     }))
     for run_config in os.listdir(base_path):
         run_config_path = os.path.join(base_path, run_config)
@@ -153,27 +164,38 @@ def process_directories(base_path):
                 tech_path = os.path.join(run_config_path, technology)
                 if os.path.isdir(tech_path):
                     for file in os.listdir(tech_path):
-                        design_name = file.replace('.log', '')
+                        design_name = file.replace('.log', '').replace('.json', '')
                         log_file_path = os.path.join(tech_path, file)
                         if file.endswith('.log'):
-                            drt_iterations, drt_status, drt_cpu_time, drt_violations, gpl_cpu_time, gpl_cpu_time_seconds, gpl_last_num_call, drt_first_iteration_violations, gpl_iterations, gpl_last_tns, rsz_tns, starting_inst_area, starting_num_instances, total_resized_gates, total_inserted_buffers = process_log_file(log_file_path)
-                        else:
-                            drt_iterations, drt_status, drt_cpu_time, drt_violations, gpl_cpu_time, gpl_cpu_time_seconds, gpl_last_num_call, drt_first_iteration_violations, gpl_iterations, gpl_last_tns, rsz_tns, starting_inst_area, starting_num_instances, total_resized_gates, total_inserted_buffers = None, "", "", "", None, None, None, None, None, None, None, None, None, 0, 0
-                        data[(design_name, technology)][run_config]['gpl_iterations'] = gpl_iterations
-                        data[(design_name, technology)][run_config]['drt_iterations'].append(drt_iterations)
-                        data[(design_name, technology)][run_config]['drt_status'] = drt_status
-                        data[(design_name, technology)][run_config]['drt_cpu_time'] = drt_cpu_time
-                        data[(design_name, technology)][run_config]['drt_violations'] = drt_violations
-                        data[(design_name, technology)][run_config]['gpl_cpu_time'] = gpl_cpu_time
-                        data[(design_name, technology)][run_config]['gpl_cpu_time_seconds'] = gpl_cpu_time_seconds
-                        data[(design_name, technology)][run_config]['gpl_last_num_call'] = gpl_last_num_call
-                        data[(design_name, technology)][run_config]['drt_first_iteration_violations'] = drt_first_iteration_violations
-                        data[(design_name, technology)][run_config]['gpl_last_tns'] = gpl_last_tns
-                        data[(design_name, technology)][run_config]['rsz_tns'] = rsz_tns
-                        data[(design_name, technology)][run_config]['starting_inst_area'] = starting_inst_area
-                        data[(design_name, technology)][run_config]['starting_num_instances'] = starting_num_instances
-                        data[(design_name, technology)][run_config]['total_resized_gates'] = total_resized_gates
-                        data[(design_name, technology)][run_config]['total_inserted_buffers'] = total_inserted_buffers
+                            log_data = process_log_file(log_file_path)
+                            if log_data:
+                                drt_iterations, drt_status, drt_cpu_time, drt_violations, gpl_cpu_time, gpl_cpu_time_seconds, gpl_last_num_call, drt_first_iteration_violations, gpl_iterations, gpl_last_tns, rsz_tns, starting_inst_area, starting_num_instances, total_resized_gates, total_inserted_buffers = log_data
+                                data[(design_name, technology)][run_config]['gpl_iterations'] = gpl_iterations
+                                data[(design_name, technology)][run_config]['drt_iterations'].append(drt_iterations)
+                                data[(design_name, technology)][run_config]['drt_status'] = drt_status
+                                data[(design_name, technology)][run_config]['drt_cpu_time'] = drt_cpu_time
+                                data[(design_name, technology)][run_config]['drt_violations'] = drt_violations
+                                data[(design_name, technology)][run_config]['gpl_cpu_time'] = gpl_cpu_time
+                                data[(design_name, technology)][run_config]['gpl_cpu_time_seconds'] = gpl_cpu_time_seconds
+                                data[(design_name, technology)][run_config]['gpl_last_num_call'] = gpl_last_num_call
+                                data[(design_name, technology)][run_config]['drt_first_iteration_violations'] = drt_first_iteration_violations
+                                data[(design_name, technology)][run_config]['gpl_last_tns'] = gpl_last_tns
+                                data[(design_name, technology)][run_config]['rsz_tns'] = rsz_tns
+                                data[(design_name, technology)][run_config]['starting_inst_area'] = starting_inst_area
+                                data[(design_name, technology)][run_config]['starting_num_instances'] = starting_num_instances
+                                data[(design_name, technology)][run_config]['total_resized_gates'] = total_resized_gates
+                                data[(design_name, technology)][run_config]['total_inserted_buffers'] = total_inserted_buffers
+                        elif file.endswith('.json'):
+                            end_instance_area, cts_tns, finish_tns, end_instance_count = process_json_file(log_file_path)
+                            if end_instance_area is not None:
+                                data[(design_name, technology)][run_config]['end_instance_area'] = end_instance_area
+                            if cts_tns is not None:
+                                data[(design_name, technology)][run_config]['cts_tns'] = cts_tns
+                            if finish_tns is not None:
+                                data[(design_name, technology)][run_config]['finish_tns'] = finish_tns
+                            if end_instance_count is not None:
+                                data[(design_name, technology)][run_config]['end_instance_count'] = end_instance_count
+
     return data
 
 def write_to_csv(data, output_file):
@@ -190,9 +212,9 @@ def write_to_csv(data, output_file):
 
         for rc in run_configs:
             if SHOW_GPL:
-                headers_top.extend([rc] * 11 + [''])
-                headers_middle.extend(['GPL', 'GPL', 'GPL', 'GPL', 'GPL', 'GPL', 'GPL', 'GPL', 'GPL', 'GPL', 'GPL', ''])
-                headers_bottom.extend(['Status', '# RD iterations', 'Iterations', 'CPU Time (min)', 'Avg. Runtime per Iteration (s)', 'TNS', 'RSZ TNS', 'Start Inst Area (um^2)', 'Start Num Instances', 'Resized Gates', 'Inserted Buffers', ''])
+                headers_top.extend([rc] * 15 + [''])
+                headers_middle.extend(['6-Final', 'GPL', 'GPL', 'GPL', 'GPL', '3_3-GPL-RSZ', '3_4-RSZ', '4-CTS (json)', '6-Final (json)', 'GPL', 'GPL (json)', 'GPL', 'GPL (json)', '3_3-GPL-RSZ', '3_3-GPL-RSZ', ''])
+                headers_bottom.extend(['Status', '# RD iterations', 'Iterations', 'CPU Time (min)', 'Avg. Runtime per Iteration (s)', 'TNS', 'RSZ TNS', 'CTS TNS', 'Finish TNS', 'Start Inst Area (um^2)', 'End Instance Area', 'Start Num Instances', 'End Num Instance', 'Resized Gates', 'Inserted Buffers', ''])
             
             if SHOW_DRT:
                 headers_top.extend([rc] * 5 + [''])
@@ -209,7 +231,8 @@ def write_to_csv(data, output_file):
                 rc_data = run_config_data.get(rc, {
                     'gpl_iterations': None, 'drt_iterations': [''], 'drt_status': '', 'drt_cpu_time': '', 'drt_violations': '',
                     'gpl_cpu_time': None, 'gpl_cpu_time_seconds': None, 'gpl_last_num_call': None, 'drt_first_iteration_violations': None, 'gpl_last_tns': None, 'rsz_tns': None,
-                    'starting_inst_area': None, 'num_instances': None, 'total_resized_gates': 0, 'total_inserted_buffers': 0
+                    'starting_inst_area': None, 'starting_num_instances': None, 'total_resized_gates': 0, 'total_inserted_buffers': 0, 'end_instance_area': None,
+                    'cts_tns': None, 'finish_tns': None, 'end_instance_count': None
                 })
                 drt_status = rc_data['drt_status'] if rc_data['drt_status'] is not None else ''
                 gpl_iterations = rc_data['gpl_iterations']
@@ -221,14 +244,18 @@ def write_to_csv(data, output_file):
                 gpl_last_num_call = rc_data['gpl_last_num_call']
                 gpl_last_tns = rc_data['gpl_last_tns']
                 rsz_tns = rc_data['rsz_tns']
+                cts_tns = rc_data['cts_tns']
+                finish_tns = rc_data['finish_tns']
                 starting_inst_area = rc_data['starting_inst_area']
+                end_instance_area = rc_data['end_instance_area']
                 starting_num_instances = rc_data['starting_num_instances']
+                end_instance_count = rc_data['end_instance_count']
                 total_resized_gates = rc_data['total_resized_gates']
                 total_inserted_buffers = rc_data['total_inserted_buffers']
                 avg_runtime_per_iteration = '{:.2f}'.format(gpl_cpu_time_seconds / float(gpl_iterations)) if gpl_cpu_time_seconds and gpl_iterations else ''
 
                 if SHOW_GPL:
-                    row.extend([drt_status, gpl_last_num_call, gpl_iterations, gpl_cpu_time, avg_runtime_per_iteration, gpl_last_tns, rsz_tns, starting_inst_area, starting_num_instances, total_resized_gates, total_inserted_buffers, ''])
+                    row.extend([drt_status, gpl_last_num_call, gpl_iterations, gpl_cpu_time, avg_runtime_per_iteration, gpl_last_tns, rsz_tns, cts_tns, finish_tns, starting_inst_area, end_instance_area, starting_num_instances, end_instance_count, total_resized_gates, total_inserted_buffers, ''])
                 
                 if SHOW_DRT:
                     row.extend([drt_status, drt_first_iteration_violations, drt_iterations, drt_cpu_time, ''])
