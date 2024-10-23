@@ -15,9 +15,9 @@ def trim_whitespace(image):
         return image.crop(bbox)
     return image
 
-dir1 = './nightly-22jul-4277-density/histograms/'
-dir2 = './keepRsz-SCI5-refreshAll-density/histograms/'
-output_dir = 'output_directory'
+dir1 = './nightly4624/histograms/'
+dir2 = './SCI7/histograms/'
+output_dir = 'compare_density'
 
 if not os.path.exists(output_dir):
     os.makedirs(output_dir)
