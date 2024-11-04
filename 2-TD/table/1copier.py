@@ -1,3 +1,5 @@
+# useful to unpack all artifacts from jenkins:
+# for file in *.zip; do unzip "$file" -d "${file%%.*}"; done
 import os
 import shutil
 import json
