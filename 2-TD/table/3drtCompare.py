@@ -135,8 +135,9 @@ def write_to_csv(data, output_file):
         headers_bottom = ['Design Name', 'Technology']
         for rc in run_configs:
             headers_top.extend([rc] * 7)  # Ensure the header spans 7 columns for each run configuration
-            headers_middle.extend(['0th DRT Iteration', 'Final DRT', 'Final DRT', 'Final DRT', 'Final DRT', 'GPL', 'GPL'])
-            headers_bottom.extend(['Violations', 'Iterations', 'Status', 'CPU Time', 'Violations', 'CPU Time', 'Last NumCall'])
+            headers_top.append('')
+            headers_middle.extend(['0th DRT Iteration', 'Final DRT', 'Final DRT', 'Final DRT', 'Final DRT', 'GPL', 'GPL', ''])
+            headers_bottom.extend(['Violations', 'Iterations', 'Status', 'CPU Time', 'Violations', 'CPU Time', 'Last NumCall', ''])
         writer.writerow(headers_top)
         writer.writerow(headers_middle)
         writer.writerow(headers_bottom)
@@ -152,7 +153,7 @@ def write_to_csv(data, output_file):
                 global_placer_cpu_time = rc_data['Global Placer CPU Time']
                 last_num_call = rc_data['Last NumCall']
                 first_iteration_violations = rc_data['0th DRT Iteration Violations']
-                row.extend([first_iteration_violations, iterations, status, cpu_time, violations, global_placer_cpu_time, last_num_call])
+                row.extend([first_iteration_violations, iterations, status, cpu_time, violations, global_placer_cpu_time, last_num_call, ''])
             writer.writerow(row)
 
 base_path = '.'
