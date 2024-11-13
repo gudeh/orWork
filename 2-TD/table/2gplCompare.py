@@ -77,7 +77,10 @@ def process_json_file(json_file_path):
         finish_tns = data.get("finish__timing__setup__tns", None)
         placeopt_area = data.get("placeopt__design__instance__area", None)
         placeopt_count = data.get("placeopt__design__instance__count", None)
-        return end_instance_area, cts_tns, finish_tns, end_instance_count, start_inst_area, start_inst_num, placeopt_area, placeopt_count
+        placeopt_tns = data.get("placeopt__timing__setup__tns", None)
+        
+        return (end_instance_area, cts_tns, finish_tns, end_instance_count, start_inst_area, start_inst_num, 
+                placeopt_area, placeopt_count, placeopt_tns)
 
 # Updating process_directories to handle new data
 def process_directories(base_path):
@@ -85,7 +88,7 @@ def process_directories(base_path):
         'gpl_iterations': None, 'finish_status': None, 'gpl_cpu_time': None, 'gpl_cpu_time_seconds': None, 'gpl_last_num_call': None,
         'start_inst_area': None, 'start_inst_num': None,
         'end_instance_area': None, 'cts_tns': None, 'finish_tns': None, 'end_instance_count': None,
-        'placeopt_area': None, 'placeopt_count': None
+        'placeopt_area': None, 'placeopt_count': None, 'placeopt_tns': None
     }))
     for run_config in os.listdir(base_path):
         run_config_path = os.path.join(base_path, run_config)
@@ -109,7 +112,8 @@ def process_directories(base_path):
                         elif file.endswith('.json'):
                             result = process_json_file(log_file_path)
                             if result:
-                                end_instance_area, cts_tns, finish_tns, end_instance_count, start_inst_area, start_inst_num, placeopt_area, placeopt_count = result
+                                (end_instance_area, cts_tns, finish_tns, end_instance_count, start_inst_area, 
+                                 start_inst_num, placeopt_area, placeopt_count, placeopt_tns) = result
                                 data[(design_name, technology)][run_config].update({
                                     'end_instance_area': end_instance_area,
                                     'cts_tns': cts_tns,
@@ -118,7 +122,8 @@ def process_directories(base_path):
                                     'start_inst_area': start_inst_area,
                                     'start_inst_num': start_inst_num,
                                     'placeopt_area': placeopt_area,
-                                    'placeopt_count': placeopt_count
+                                    'placeopt_count': placeopt_count,
+                                    'placeopt_tns': placeopt_tns
                                 })
     return data
 
@@ -136,15 +141,15 @@ def write_to_csv(data, output_file):
 
         for rc in run_configs:
             if SHOW_GPL:
-                headers_top.extend([rc] * 17 + [''])
+                headers_top.extend([rc] * 18 + [''])
                 headers_middle.extend([
-                    '6-Final', 'GPL', 'GPL', 'GPL', 'GPL', '4-CTS (json)', '6-Final (json)',
+                    '6-Final', 'GPL', 'GPL', 'GPL', 'GPL', '3.4-PlaceOpt (json)', '4-CTS (json)', '6-Final (json)',
                     '2-Floorp (json)', '3.3-GPL (json)', '2-Floorp (json)', '3.3-GPL (json)',
-                    'change 2 to 3.3', 'change 2 to 3.3', 'placeopt (3.4)', 'placeopt (3.4)', 'change 3.3 to 3.4', 'change 3.3 to 3.4', ''
+                    'change 2 to 3.3', 'change 2 to 3.3', '3.4-placeopt(json)', 'placeopt (3.4)', 'change 3.3 to 3.4', 'change 3.3 to 3.4', ''
                 ])
                 headers_bottom.extend([
-                    'Status', '# RD iterations', 'Iterations', 'CPU Time (min)', 'Avg. Runtime per Iteration (s)', 'CTS TNS', 'Finish TNS', 
-                    'Start Area (um^2)', 'End Area', 'Start #Instances', 'End #Instances', '% Area Change', '% Inst Change',
+                    'Status', '# RD iterations', 'Iterations', 'CPU Time (min)', 'Avg. Runtime per Iteration (s)', 'TNS', 'CTS TNS', 
+                    'Finish TNS', 'Start Area (um^2)', 'End Area', 'Start #Instances', 'End #Instances', '% Area Change', '% Inst Change',
                     'Area (um^2)', 'Instance Count', '% Area Change', '% Instance Change', ''
                 ])
 
@@ -158,13 +163,14 @@ def write_to_csv(data, output_file):
                 rc_data = run_config_data.get(rc, {
                     'gpl_iterations': None, 'finish_status': '', 'gpl_cpu_time': None, 'gpl_cpu_time_seconds': None, 'gpl_last_num_call': None,
                     'cts_tns': None, 'finish_tns': None, 'start_inst_area': None, 'start_inst_num': None, 
-                    'end_instance_area': None, 'end_instance_count': None, 'placeopt_area': None, 'placeopt_count': None
+                    'end_instance_area': None, 'end_instance_count': None, 'placeopt_area': None, 'placeopt_count': None, 'placeopt_tns': None
                 })
                 finish_status = rc_data['finish_status'] if rc_data['finish_status'] is not None else ''
                 gpl_iterations = rc_data['gpl_iterations']
                 gpl_cpu_time = rc_data['gpl_cpu_time']
                 gpl_cpu_time_seconds = rc_data['gpl_cpu_time_seconds']
                 gpl_last_num_call = rc_data['gpl_last_num_call']
+                placeopt_tns = rc_data['placeopt_tns']
                 cts_tns = rc_data['cts_tns']
                 finish_tns = rc_data['finish_tns']
                 start_inst_area = rc_data['start_inst_area']
@@ -173,6 +179,7 @@ def write_to_csv(data, output_file):
                 end_instance_count = rc_data['end_instance_count']
                 placeopt_area = rc_data['placeopt_area']
                 placeopt_count = rc_data['placeopt_count']
+                
                 
                 avg_runtime_per_iteration = '{:.3f}'.format(gpl_cpu_time_seconds / float(gpl_iterations)) if gpl_cpu_time_seconds and gpl_iterations else ''
                 
@@ -206,7 +213,7 @@ def write_to_csv(data, output_file):
 
                 if SHOW_GPL:
                     row.extend([
-                        finish_status, gpl_last_num_call, gpl_iterations, gpl_cpu_time, avg_runtime_per_iteration, 
+                        finish_status, gpl_last_num_call, gpl_iterations, gpl_cpu_time, avg_runtime_per_iteration, placeopt_tns, 
                         cts_tns, finish_tns, start_inst_area, end_instance_area, start_inst_num, end_instance_count, area_change, instance_change,
                         placeopt_area, placeopt_count, area_change_3_3_to_3_4, instance_change_3_3_to_3_4, ''
                     ])
