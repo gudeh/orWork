@@ -72,7 +72,7 @@ def calculate_spearman(csv_file_rudy, csv_file_grt, all_values):
     ax2 = plt.subplot(gs[0, 2])
     # ax2.scatter(df_rudy['value_normalized'], df_grt['value_normalized'], color='green', alpha=0.7)
     ax2.scatter(df_rudy['value'], df_grt['value'], color='green', alpha=0.7)
-    ax2.plot([0, 1], [0, 1], color='red', linestyle='--', linewidth=2, label='Identity Line')
+    ax2.plot([0, 100], [0, 100], color='red', linestyle='--', linewidth=2, label='Identity Line')
     # ax2.set_title(f'Scatter Plot (normalized)\nSpearman: {spearman_corr:.4f}\nR-squared: {r_squared:.4f}\nKendall: {kendall_corr:.4f}')
     ax2.set_title(f'Scatter Plot\nSpearman: {spearman_corr:.4f}\nR-squared: {r_squared:.4f}\nKendall: {kendall_corr:.4f}')
     ax2.set_xlabel(f'{os.path.basename(csv_file_rudy)}')
@@ -99,6 +99,7 @@ def calculate_spearman(csv_file_rudy, csv_file_grt, all_values):
 
     return os.path.basename(csv_file_rudy), os.path.basename(csv_file_grt), spearman_corr, r_squared, kendall_corr
 
+
 def process_directory(directory_path):
     files = os.listdir(directory_path)
     csv_files = [file for file in files if file.endswith(('-rudy.csv', '-grt.csv'))]
@@ -106,7 +107,12 @@ def process_directory(directory_path):
     metrics_df = pd.DataFrame(columns=['File_RUDY', 'File_GRT', 'Spearman', 'R_squared', 'Kendall'])
 
     all_values = {'rudy': [], 'grt': []}
-    pair_count = 0 
+    tech_values = {}
+    design_values = {}
+
+    known_technologies = ["gf180", "asap7", "nangate45", "ihp-sg13g2", "sky130hd", "sky130hs"]
+
+    pair_count = 0
 
     file_groups = {}
     for file_name in csv_files:
@@ -118,7 +124,7 @@ def process_directory(directory_path):
     for common_prefix, file_pair in file_groups.items():
         if len(file_pair) == 2:
             file_pair.sort()
-            pair_count += 1 
+            pair_count += 1
 
             csv_file_rudy = os.path.join(directory_path, file_pair[0]) if '-rudy.csv' in file_pair[0] else os.path.join(directory_path, file_pair[1])
             csv_file_grt = os.path.join(directory_path, file_pair[1]) if '-grt.csv' in file_pair[1] else os.path.join(directory_path, file_pair[0])
@@ -130,51 +136,127 @@ def process_directory(directory_path):
             try:
                 file_rudy, file_grt, spearman_corr, r_squared, kendall_corr = calculate_spearman(csv_file_rudy, csv_file_grt, all_values)
                 new_row = pd.DataFrame({
-                    'File_RUDY': [file_rudy], 
-                    'File_GRT': [file_grt], 
-                    'Spearman': [spearman_corr], 
-                    'R_squared': [r_squared], 
+                    'File_RUDY': [file_rudy],
+                    'File_GRT': [file_grt],
+                    'Spearman': [spearman_corr],
+                    'R_squared': [r_squared],
                     'Kendall': [kendall_corr]
                 })
                 metrics_df = pd.concat([metrics_df, new_row], ignore_index=True)
+
+                # Match technology and extract design name
+                tech = next((t for t in known_technologies if common_prefix.startswith(t)), None)
+                if tech:
+                    design = common_prefix[len(tech):].strip("_").replace("-", "_")
+                else:
+                    tech, design = "unknown", common_prefix
+
+                # Collect data for technology histograms
+                if tech not in tech_values:
+                    tech_values[tech] = {'rudy': [], 'grt': []}
+                tech_values[tech]['rudy'].extend(pd.read_csv(csv_file_rudy)['value'])
+                tech_values[tech]['grt'].extend(pd.read_csv(csv_file_grt)['value'])
+
+                # Collect data for design histograms
+                if design not in design_values:
+                    design_values[design] = {'rudy': [], 'grt': []}
+                design_values[design]['rudy'].extend(pd.read_csv(csv_file_rudy)['value'])
+                design_values[design]['grt'].extend(pd.read_csv(csv_file_grt)['value'])
+
             except Exception as e:
                 print(f"Error processing {common_prefix}: {e}")
 
     average_row = pd.DataFrame({
-        'File_RUDY': ['Average'], 
-        'File_GRT': [''], 
-        'Spearman': [metrics_df['Spearman'].mean()], 
-        'R_squared': [metrics_df['R_squared'].mean()], 
+        'File_RUDY': ['Average'],
+        'File_GRT': [''],
+        'Spearman': [metrics_df['Spearman'].mean()],
+        'R_squared': [metrics_df['R_squared'].mean()],
         'Kendall': [metrics_df['Kendall'].mean()]
     })
 
     std_dev_row = pd.DataFrame({
-        'File_RUDY': ['Standard Deviation'], 
-        'File_GRT': [''], 
-        'Spearman': [metrics_df['Spearman'].std()], 
-        'R_squared': [metrics_df['R_squared'].std()], 
+        'File_RUDY': ['Standard Deviation'],
+        'File_GRT': [''],
+        'Spearman': [metrics_df['Spearman'].std()],
+        'R_squared': [metrics_df['R_squared'].std()],
         'Kendall': [metrics_df['Kendall'].std()]
     })
 
     metrics_df = pd.concat([metrics_df, average_row, std_dev_row], ignore_index=True)
 
-    output_csv_file = 'histograms/metrics_summary.csv'
+    output_csv_file = 'histograms/correlations_summary.csv'
     metrics_df.to_csv(output_csv_file, index=False)
     print(f"Metrics summary written to {output_csv_file}")
 
-    fig, ax = plt.subplots(figsize=(12, 6))
-    ax.hist(all_values['rudy'], bins=20, color='blue', alpha=0.7, label='RUDY', range=(0,150))
-    ax.hist(all_values['grt'], bins=20, color='orange', alpha=0.7, label='GRT', range=(0,150))
-    ax.set_title('Overall Histogram')
-    ax.set_xlabel('Values')
-    ax.set_ylabel('Frequency')
-    ax.legend()
+    # Create directory for technology histograms
+    tech_histograms_dir = os.path.join(output_folder, "technology_histograms")
+    os.makedirs(tech_histograms_dir, exist_ok=True)
 
-    overall_histogram_filename = f"0overall_histogram.png"
-    overall_histogram_path = os.path.join(output_folder, overall_histogram_filename)
-    plt.tight_layout()
-    plt.savefig(overall_histogram_path)
-    plt.close()
+    for tech, values in tech_values.items():
+        if values['rudy'] or values['grt']:
+            fig, ax = plt.subplots(figsize=(12, 6))
+            ax.hist(values['rudy'], bins=20, color='blue', alpha=0.7, label=f'{tech.upper()} RUDY', range=(0, 150))
+            ax.hist(values['grt'], bins=20, color='orange', alpha=0.7, label=f'{tech.upper()} GRT', range=(0, 150))
+            ax.set_title(f'{tech.upper()} Histogram')
+            ax.set_xlabel('Values')
+            ax.set_ylabel('Frequency')
+            ax.legend()
+
+            tech_histogram_filename = f"{tech}_histogram.png"
+            tech_histogram_filepath = os.path.join(tech_histograms_dir, tech_histogram_filename)
+            plt.tight_layout()
+            plt.savefig(tech_histogram_filepath)
+            plt.close()
+
+    # Create directory for design histograms
+    design_histograms_dir = os.path.join(output_folder, "design_histograms")
+    os.makedirs(design_histograms_dir, exist_ok=True)
+
+    for design, values in design_values.items():
+        if values['rudy'] or values['grt']:
+            fig, ax = plt.subplots(figsize=(12, 6))
+
+            # Create histograms
+            ax.hist(values['rudy'], bins=20, color='blue', alpha=0.7, range=(0, 150))
+            ax.hist(values['grt'], bins=20, color='orange', alpha=0.7, range=(0, 150))
+
+            # Add title and labels
+            ax.set_title(f'{design.upper()} Histogram')
+            ax.set_xlabel('Values')
+            ax.set_ylabel('Frequency')
+
+            # Manually create legend using proxy artists
+            proxy_artists = [
+                plt.Rectangle((0, 0), 1, 1, color='blue', alpha=0.7, label='RUDY'),
+                plt.Rectangle((0, 0), 1, 1, color='orange', alpha=0.7, label='GRT')
+            ]
+            ax.legend(handles=proxy_artists, loc="upper right")
+
+            # Save histogram
+            design_histogram_filename = f"{design}_histogram.png"
+            design_histogram_filepath = os.path.join(design_histograms_dir, design_histogram_filename)
+            plt.tight_layout()
+            plt.savefig(design_histogram_filepath)
+            plt.close()
+
+    # Create overall histogram
+    overall_histogram_path = os.path.join(output_folder, "0overall_histogram.png")
+    if all_values['rudy'] or all_values['grt']:
+        fig, ax = plt.subplots(figsize=(12, 6))
+        ax.hist(all_values['rudy'], bins=20, color='blue', alpha=0.7, label='Overall RUDY', range=(0, 150))
+        ax.hist(all_values['grt'], bins=20, color='orange', alpha=0.7, label='Overall GRT', range=(0, 150))
+        ax.set_title('Overall Histogram')
+        ax.set_xlabel('Values')
+        ax.set_ylabel('Frequency')
+        ax.legend()
+        plt.tight_layout()
+        plt.savefig(overall_histogram_path)
+        plt.close()
+        print(f"Overall histogram saved to {overall_histogram_path}")
+    else:
+        print("No data available for overall histogram.")
+
+
 
 if __name__ == "__main__":
     warnings.filterwarnings("ignore", category=DeprecationWarning)
