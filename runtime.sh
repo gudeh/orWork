@@ -11,6 +11,7 @@ for i in $(seq 1 $NUM_RUNS); do
   
   # { time openroad -no_init -threads 1 incremental02.tcl -exit; } 2>&1 | tee -a fullOutput.log | grep -E '^real|^user|^sys' >> runtimeTest.log
   # { time ./regression; } 2>&1 | tee -a fullOutput.log | grep -E '^real|^user|^sys' >> runtimeTest.log
-  { time ./run-me-swerv-nangate45-base.sh; } 2>&1 | tee -a fullOutput.log | grep -E '^real|^user|^sys' >> runtimeTest.log
+  #required to put -exit in run-me
+  { time ./run-me-swerv-nangate45-base.sh; } 2>&1 | tee -a fullOutput.log | grep -E '^real|^user|^sys' >> runtime.log
   
 done
