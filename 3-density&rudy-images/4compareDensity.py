@@ -7,7 +7,27 @@ import re
 
 image_dir = './'
 output_dir = './histograms'
-os.makedirs(output_dir, exist_ok=True)
+# Refresh histograms directory
+if os.path.exists(output_dir):
+    for f in os.listdir(output_dir):
+        os.remove(os.path.join(output_dir, f))
+else:
+    os.makedirs(output_dir)
+
+alias_map = {
+    'bp': 'black_parrot',
+}
+
+def normalize_key(raw_key):
+    # Remove common suffixes
+    key = raw_key.replace('_top', '').replace('_bot', '').rstrip('_')
+
+    # Replace known aliases
+    for short, full in alias_map.items():
+        pattern = r'\b' + re.escape(short) + r'\b'
+        if re.search(pattern, key):
+            key = re.sub(pattern, full, key)
+    return key
 
 def concatenate_images(final_img, density_imgs, rudy_imgs, output_path):
     if density_imgs:
@@ -111,7 +131,7 @@ for file in files:
         match = re.split(r'-stg3|-final_placement', file)
         if not match or not match[0]:
             continue
-        key = match[0].replace('_top', '').replace('_bot', '').rstrip('_')
+        key = normalize_key(match[0])
 
 
         if key not in grouped_images:
