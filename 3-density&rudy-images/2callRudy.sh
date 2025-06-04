@@ -14,17 +14,17 @@ for platform in "$DESIGNS_DIR"/*; do
             if [ -d "$design" ]; then
                 export design_name=$(basename "$design")
 		
-                command="make check_density STAGE=3_3_place_gp DESIGN_CONFIG=\"$DESIGNS_DIR/$platform_name/$design_name/config.mk\" my_design_name=$design_name"
-                eval $command &
-                echo -e "\n->$command"
+                # command="make check_density STAGE=3_3_place_gp DESIGN_CONFIG=\"$DESIGNS_DIR/$platform_name/$design_name/config.mk\" my_design_name=$design_name"
+                # eval $command &
+                # echo -e "\n->$command"
 		
-                command="make check_density STAGE=3_4_place_resized DESIGN_CONFIG=\"$DESIGNS_DIR/$platform_name/$design_name/config.mk\" my_design_name=$design_name"
-                eval $command &
-                echo -e "\n->$command"
+                # command="make check_density STAGE=3_4_place_resized DESIGN_CONFIG=\"$DESIGNS_DIR/$platform_name/$design_name/config.mk\" my_design_name=$design_name"
+                # eval $command &
+                # echo -e "\n->$command"
 
-		command="make check_density STAGE=3_5_place_dp DESIGN_CONFIG=\"$DESIGNS_DIR/$platform_name/$design_name/config.mk\" my_design_name=$design_name"
-                eval $command &
-                echo -e "\n->$command"
+		# command="make check_density STAGE=3_5_place_dp DESIGN_CONFIG=\"$DESIGNS_DIR/$platform_name/$design_name/config.mk\" my_design_name=$design_name"
+                # eval $command &
+                # echo -e "\n->$command"
 
 		command="make check_rudy STAGE=3_3_place_gp DESIGN_CONFIG=\"$DESIGNS_DIR/$platform_name/$design_name/config.mk\" my_design_name=$design_name"
                 eval $command &
