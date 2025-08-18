@@ -26,7 +26,10 @@ def merge_csv_files(input_folder, output_file):
         "globalroute__timing__setup__tns",
         "finish__timing__setup__tns",
         "detailedplace__route__wirelength__estimated",
-        "detailedroute__route__wirelength"
+        "detailedroute__route__wirelength",
+        "finish__timing__wns_percent_delay",
+        "detailedplace__timing__fmax",
+        "finish__timing__fmax"
     ]
     
     merged_df = merged_df[merged_df['Metrics'].isin(filter_metrics)]
