@@ -1,14 +1,18 @@
+export PLATFORM_DIR=...
+
 python3 ./util/genMetrics.py -d hercules_is_int \
      -p rapidus2hp \
-     -v pinDensity \
---logs ./logs/rapidus2hp/hercules_is_int/pinDensity \
---reports ./reports/rapidus2hp/hercules_is_int/pinDensity \
-     --results ./results/rapidus2hp/hercules_is_int/pinDensity \
-     -o ./reports/rapidus2hp/hercules_is_int/pinDensity/metadata.json 2>&1 \
-| tee ./reports/rapidus2hp/hercules_is_int/pinDensity/metadata-generate.log
+     -v averageDensity \
+--logs ./logs/rapidus2hp/hercules_is_int/averageDensity \
+--reports ./reports/rapidus2hp/hercules_is_int/averageDensity \
+     --results ./results/rapidus2hp/hercules_is_int/averageDensity \
+     -o ./reports/rapidus2hp/hercules_is_int/averageDensity/metadata.json 2>&1 \
+| tee ./reports/rapidus2hp/hercules_is_int/averageDensity/metadata-generate.log
 
 
 python3 ./util/checkMetadata.py \
-    -m ./reports/rapidus2hp/hercules_is_int/pinDensity/metadata.json \
-     -r ./designs/rapidus2hp/hercules_is_int//rules-pinDensity.json 2>&1 \
-     | tee ./reports/rapidus2hp/hercules_is_int/pinDensity/metadata-check.log
+    -m ./reports/rapidus2hp/hercules_is_int/averageDensity/metadata.json \
+     -r ./designs/rapidus2hp/hercules_is_int//rules-base.json 2>&1 \
+     | tee ./reports/rapidus2hp/hercules_is_int/averageDensity/metadata-check.log
+     
+ vim -d ~/workspace/7ORFS/flow/reports/rapidus2hp/hercules_is_int/base/metadata-check.log ./reports/rapidus2hp/hercules_is_int/averageDensity/metadata-check.log
