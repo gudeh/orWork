@@ -8,4 +8,7 @@ python3 ./util/genMetrics.py -d hercules_is_int \
 | tee ./reports/rapidus2hp/hercules_is_int/pinDensity/metadata-generate.log
 
 
-    | tee ./reports/rapidus2hp/hercules_is_int/pinDensity/metadata-check.log
+python3 ./util/checkMetadata.py \
+    -m ./reports/rapidus2hp/hercules_is_int/pinDensity/metadata.json \
+     -r ./designs/rapidus2hp/hercules_is_int//rules-pinDensity.json 2>&1 \
+     | tee ./reports/rapidus2hp/hercules_is_int/pinDensity/metadata-check.log
