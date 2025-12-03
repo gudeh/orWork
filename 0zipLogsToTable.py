@@ -377,7 +377,6 @@ def write_to_csv(data, output_file):
             writer.writerow(row)
 
 
-
 def save_plots(data, out_dir="plots", clip_pct=0):
     import os
     import numpy as np
@@ -385,32 +384,37 @@ def save_plots(data, out_dir="plots", clip_pct=0):
 
     os.makedirs(out_dir, exist_ok=True)
 
-    def f(x):
+    # Improved helper: returns None if missing, ensuring we don't plot 0.0 for missing data
+    def get_valid_val(val):
+        if val in (None, ""):
+            return None
         try:
-            return float(x) if x not in (None, "") else 0.0
+            return float(val)
         except ValueError:
-            return 0.0
+            return None
 
     def clip_symmetric(y, pct):
-        if pct is None or pct <= 0 or len(y) == 0:
+        # Filter out NaNs before calculating percentiles
+        valid_y = y[~np.isnan(y)]
+        if pct is None or pct <= 0 or len(valid_y) == 0:
             return None
-        lo, hi = np.percentile(y, [pct, 100 - pct])
+        lo, hi = np.percentile(valid_y, [pct, 100 - pct])
         lim = max(abs(lo), abs(hi))
         return (-lim, lim) if lim > 0 else None
 
     def stats_text(arr, fmt="{:+.2f}"):
-        if len(arr) == 0:
+        # Filter out NaNs for stats calculation
+        valid_arr = arr[~np.isnan(arr)]
+        if len(valid_arr) == 0:
             return ""
-        mean = np.mean(arr)
-        median = np.median(arr)
-        std = np.std(arr)
+        mean = np.mean(valid_arr)
+        median = np.median(valid_arr)
+        std = np.std(valid_arr)
         return f"mean={fmt.format(mean)}, median={fmt.format(median)}, std={fmt.format(std)}"
 
     # ---------- collect diffs (other - master) ----------
     gpl_time, gpl_iters = {}, {}
     rudy, drt_iters, drt0_pct, drt_internal = {}, {}, {}, {}
-
-    # For new plot
     wirelength_pct, finish_tns_pct, fmax_pct = {}, {}, {}
 
     for (design, tech), runs in data.items():
@@ -418,38 +422,68 @@ def save_plots(data, out_dir="plots", clip_pct=0):
             other = next(r for r in runs if r != "master")
             name = f"{tech}/{design}"
 
-            # GPL
-            gpl_time[name]  = ((f(runs[other].get("internal GPL time")) - f(runs["master"].get("internal GPL time"))) / max(f(runs["master"].get("internal GPL time")), 1.0)) * 100.0
-            gpl_iters[name] = ((f(runs[other].get("GPL iterations")) - f(runs["master"].get("GPL iterations"))) / max(f(runs["master"].get("GPL iterations")), 1.0)) * 100.0
+            # Helper to safely get vars
+            m_data = runs["master"]
+            o_data = runs[other]
 
-            # RUDY / DRT
-            rudy[name]      = f(runs[other].get("RUDY"))              - f(runs["master"].get("RUDY"))
-            drt_iters[name] = f(runs[other].get("DRT Iterations"))    - f(runs["master"].get("DRT Iterations"))
-            v0_m            = f(runs["master"].get("0th DRT Iteration Violations"))
-            v0_o            = f(runs[other].get("0th DRT Iteration Violations"))
-            drt0_pct[name]  = ((v0_o - v0_m) / max(v0_m, 1.0)) * 100.0
-            drt_internal[name] = f(runs[other].get("DRT internal time")) - f(runs["master"].get("DRT internal time"))
+            # --- GPL ---
+            m_gpl_t = get_valid_val(m_data.get("internal GPL time"))
+            o_gpl_t = get_valid_val(o_data.get("internal GPL time"))
+            if m_gpl_t is not None and o_gpl_t is not None:
+                gpl_time[name] = ((o_gpl_t - m_gpl_t) / max(m_gpl_t, 1.0)) * 100.0
 
-            # DPL JSON Wirelength, Finish TNS, finish__timing__fmax percentage diff
-            wl_m = f(runs["master"].get("DPL JSON Wirelength"))
-            wl_o = f(runs[other].get("DPL JSON Wirelength"))
-            wirelength_pct[name] = ((wl_o - wl_m) / max(wl_m, 1.0)) * 100.0
+            m_gpl_i = get_valid_val(m_data.get("GPL iterations"))
+            o_gpl_i = get_valid_val(o_data.get("GPL iterations"))
+            if m_gpl_i is not None and o_gpl_i is not None:
+                gpl_iters[name] = ((o_gpl_i - m_gpl_i) / max(m_gpl_i, 1.0)) * 100.0
 
-            tns_m = f(runs["master"].get("Finish TNS"))
-            tns_o = f(runs[other].get("Finish TNS"))
-            finish_tns_pct[name] = ((tns_o - tns_m) / max(abs(tns_m), 1.0)) * 100.0
+            # --- RUDY / DRT ---
+            m_rudy = get_valid_val(m_data.get("RUDY"))
+            o_rudy = get_valid_val(o_data.get("RUDY"))
+            if m_rudy is not None and o_rudy is not None:
+                rudy[name] = o_rudy - m_rudy
 
-            fmax_m = f(runs["master"].get("finish__timing__fmax"))
-            fmax_o = f(runs[other].get("finish__timing__fmax"))
-            fmax_pct[name] = ((fmax_o - fmax_m) / max(fmax_m, 1.0)) * 100.0
+            m_drt_i = get_valid_val(m_data.get("DRT Iterations"))
+            o_drt_i = get_valid_val(o_data.get("DRT Iterations"))
+            if m_drt_i is not None and o_drt_i is not None:
+                drt_iters[name] = o_drt_i - m_drt_i
 
-    # ---------- Figure 1: GPL runtime (2 panels) ----------
+            m_v0 = get_valid_val(m_data.get("0th DRT Iteration Violations"))
+            o_v0 = get_valid_val(o_data.get("0th DRT Iteration Violations"))
+            if m_v0 is not None and o_v0 is not None:
+                drt0_pct[name] = ((o_v0 - m_v0) / max(m_v0, 1.0)) * 100.0
+
+            m_drt_t = get_valid_val(m_data.get("DRT internal time"))
+            o_drt_t = get_valid_val(o_data.get("DRT internal time"))
+            if m_drt_t is not None and o_drt_t is not None:
+                # Calculating diff here, not %
+                drt_internal[name] = o_drt_t - m_drt_t
+
+            # --- Wirelength / Timing ---
+            m_wl = get_valid_val(m_data.get("DPL JSON Wirelength"))
+            o_wl = get_valid_val(o_data.get("DPL JSON Wirelength"))
+            if m_wl is not None and o_wl is not None:
+                wirelength_pct[name] = ((o_wl - m_wl) / max(m_wl, 1.0)) * 100.0
+
+            m_tns = get_valid_val(m_data.get("Finish TNS"))
+            o_tns = get_valid_val(o_data.get("Finish TNS"))
+            if m_tns is not None and o_tns is not None:
+                finish_tns_pct[name] = ((o_tns - m_tns) / max(abs(m_tns), 1.0)) * 100.0
+
+            m_fmax = get_valid_val(m_data.get("finish__timing__fmax"))
+            o_fmax = get_valid_val(o_data.get("finish__timing__fmax"))
+            if m_fmax is not None and o_fmax is not None:
+                fmax_pct[name] = ((o_fmax - m_fmax) / max(m_fmax, 1.0)) * 100.0
+
+    # ---------- Figure 1: GPL runtime ----------
     gpl_designs = [d for d in gpl_time if abs(gpl_time[d]) > 1e-12]
     if gpl_designs:
         gpl_designs.sort(key=lambda d: gpl_time[d], reverse=True)
         x = np.arange(len(gpl_designs))
-        y1 = np.array([gpl_time[d]  for d in gpl_designs])  # minutes
-        y2 = np.array([gpl_iters[d] for d in gpl_designs])
+        
+        # Use np.nan for missing values so they don't plot as 0
+        y1 = np.array([gpl_time.get(d, np.nan) for d in gpl_designs])
+        y2 = np.array([gpl_iters.get(d, np.nan) for d in gpl_designs])
 
         fig, axs = plt.subplots(2, 1, figsize=(14, 8), sharex=True)
 
@@ -459,7 +493,6 @@ def save_plots(data, out_dir="plots", clip_pct=0):
         axs[0].set_ylabel("Internal GPL time (%diff)")
         if lim1: axs[0].set_ylim(*lim1)
         axs[0].grid(True, axis="y", alpha=0.2)
-        # Show stats on image
         axs[0].text(0.99, 0.98, stats_text(y1), ha="right", va="top", transform=axs[0].transAxes,
                     fontsize=11, bbox=dict(facecolor="white", alpha=0.7, edgecolor="none"))
 
@@ -487,17 +520,41 @@ def save_plots(data, out_dir="plots", clip_pct=0):
     else:
         print("No designs with non-zero Internal GPL time diff to plot.")
 
-    # ---------- Figure 2: Routability (4 panels) ----------
+    # ---------- Figure 2: Routability ----------
     if drt0_pct:
         designs = sorted(drt0_pct.keys(), key=lambda d: drt0_pct[d], reverse=True)
         x = np.arange(len(designs))
-        y_rudy   = np.array([rudy.get(d, 0.0)         for d in designs])
-        y_iters  = np.array([drt_iters.get(d, 0.0)    for d in designs])
-        y_v0pct  = np.array([drt0_pct.get(d, 0.0)     for d in designs])
-        y_drtint = np.array([drt_internal.get(d, 0.0) for d in designs])
+        
+        # Use np.nan if key is missing
+        y_rudy   = np.array([rudy[d] if d in rudy else np.nan for d in designs])
+        y_iters  = np.array([drt_iters[d] if d in drt_iters else np.nan for d in designs])
+        y_v0pct  = np.array([drt0_pct[d] if d in drt0_pct else np.nan for d in designs])
+        
+        # Recalculate DRT internal time pct diff here to handle missing values safely
+        y_drtint_pct = []
+        for d in designs:
+            # Need to re-access raw data because drt_internal dict stores ABS diff, 
+            # but the plot usually wants % diff, or consistent logic.
+            # Based on previous logic, let's stick to what we stored:
+            # We stored ABS diff in `drt_internal`. 
+            # If you want % diff for the plot:
+            parts = d.split('/') # tech/design
+            run_key = (parts[1], parts[0]) 
+            runs = data.get(run_key)
+            val = np.nan
+            if runs:
+                 other = next((r for r in runs if r != "master"), None)
+                 if other:
+                     m_t = get_valid_val(runs["master"].get("DRT internal time"))
+                     o_t = get_valid_val(runs[other].get("DRT internal time"))
+                     if m_t is not None and o_t is not None:
+                         val = ((o_t - m_t) / max(m_t, 1.0)) * 100.0
+            y_drtint_pct.append(val)
+        y_drtint_pct = np.array(y_drtint_pct)
 
         fig, axs = plt.subplots(4, 1, figsize=(14, 12), sharex=True)
 
+        # Panel 1: RUDY
         lim = clip_symmetric(y_rudy, clip_pct)
         axs[0].scatter(x, y_rudy, s=28, color="#4e79a7", edgecolor="black", linewidths=0.5)
         axs[0].axhline(0, color="black", lw=0.8, ls="--")
@@ -507,6 +564,7 @@ def save_plots(data, out_dir="plots", clip_pct=0):
         axs[0].text(0.99, 0.98, stats_text(y_rudy), ha="right", va="top", transform=axs[0].transAxes,
                     fontsize=11, bbox=dict(facecolor="white", alpha=0.7, edgecolor="none"))
 
+        # Panel 2: DRT Iters
         lim = clip_symmetric(y_iters, clip_pct)
         axs[1].scatter(x, y_iters, s=28, color="#f28e2b", edgecolor="black", linewidths=0.5)
         axs[1].axhline(0, color="black", lw=0.8, ls="--")
@@ -516,6 +574,7 @@ def save_plots(data, out_dir="plots", clip_pct=0):
         axs[1].text(0.99, 0.98, stats_text(y_iters), ha="right", va="top", transform=axs[1].transAxes,
                     fontsize=11, bbox=dict(facecolor="white", alpha=0.7, edgecolor="none"))
 
+        # Panel 3: Violations
         lim = clip_symmetric(y_v0pct, clip_pct)
         axs[2].scatter(x, y_v0pct, s=28, color="#59a14f", edgecolor="black", linewidths=0.5, marker="x")
         axs[2].axhline(0, color="black", lw=0.8, ls="--")
@@ -525,14 +584,7 @@ def save_plots(data, out_dir="plots", clip_pct=0):
         axs[2].text(0.99, 0.98, stats_text(y_v0pct), ha="right", va="top", transform=axs[2].transAxes,
                     fontsize=11, bbox=dict(facecolor="white", alpha=0.7, edgecolor="none"))
 
-        # DRT internal time percentage diff (other - master) / master * 100
-        y_drtint_pct = np.array([
-            ((f(runs[other].get("DRT internal time")) - f(runs["master"].get("DRT internal time"))) / max(f(runs["master"].get("DRT internal time")), 1.0)) * 100.0
-            for d in designs
-            for runs in [data[tuple(d.split('/', 1)[::-1])]]
-            for other in runs if other != "master"
-        ])
-
+        # Panel 4: DRT Time
         lim = clip_symmetric(y_drtint_pct, clip_pct)
         axs[3].scatter(x, y_drtint_pct, s=28, color="#9c755f", edgecolor="black", linewidths=0.5)
         axs[3].axhline(0, color="black", lw=0.8, ls="--")
@@ -557,21 +609,21 @@ def save_plots(data, out_dir="plots", clip_pct=0):
     else:
         print("No DRT data to plot.")
 
-
     # ---------- Figure 3: Wirelength and timing ----------
     if wirelength_pct:
         designs = sorted(wirelength_pct.keys(), key=lambda d: wirelength_pct[d], reverse=True)
         x = np.arange(len(designs))
-        y_wl   = np.array([wirelength_pct.get(d, 0.0) for d in designs])     # % diff
-        y_tns  = np.array([finish_tns_pct.get(d, 0.0) for d in designs])     # % diff
-        y_fmax = np.array([fmax_pct.get(d, 0.0)       for d in designs])     # % diff
+        
+        y_wl   = np.array([wirelength_pct.get(d, np.nan) for d in designs])
+        y_tns  = np.array([finish_tns_pct.get(d, np.nan) for d in designs])
+        y_fmax = np.array([fmax_pct.get(d, np.nan) for d in designs])
 
         fig, axs = plt.subplots(3, 1, figsize=(14, 9), sharex=True)
 
         axs[0].scatter(x, y_wl, s=28, color="#e15759", edgecolor="black", linewidths=0.5)
         axs[0].axhline(0, color="black", lw=0.8, ls="--")
         axs[0].set_ylabel("DPL Wirelength (%diff)")
-        axs[0].set_ylim(-100, 100)            # <- fixed range
+        axs[0].set_ylim(-100, 100) 
         axs[0].grid(True, axis="y", alpha=0.2)
         axs[0].text(0.99, 0.98, stats_text(y_wl), ha="right", va="top", transform=axs[0].transAxes,
                     fontsize=11, bbox=dict(facecolor="white", alpha=0.7, edgecolor="none"))
@@ -579,7 +631,7 @@ def save_plots(data, out_dir="plots", clip_pct=0):
         axs[1].scatter(x, y_tns, s=28, color="#76b7b2", edgecolor="black", linewidths=0.5)
         axs[1].axhline(0, color="black", lw=0.8, ls="--")
         axs[1].set_ylabel("finish setup tns (%diff)")
-        axs[1].set_ylim(-100, 100)            # <- fixed range
+        axs[1].set_ylim(-100, 100) 
         axs[1].grid(True, axis="y", alpha=0.2)
         axs[1].text(0.99, 0.98, stats_text(y_tns), ha="right", va="top", transform=axs[1].transAxes,
                     fontsize=11, bbox=dict(facecolor="white", alpha=0.7, edgecolor="none"))
@@ -587,7 +639,7 @@ def save_plots(data, out_dir="plots", clip_pct=0):
         axs[2].scatter(x, y_fmax, s=28, color="#b07aa1", edgecolor="black", linewidths=0.5)
         axs[2].axhline(0, color="black", lw=0.8, ls="--")
         axs[2].set_ylabel("finish fmax (%diff)")
-        axs[2].set_ylim(-100, 100)            # <- fixed range
+        axs[2].set_ylim(-100, 100) 
         axs[2].grid(True, axis="y", alpha=0.2)
         axs[2].text(0.99, 0.98, stats_text(y_fmax), ha="right", va="top", transform=axs[2].transAxes,
                     fontsize=11, bbox=dict(facecolor="white", alpha=0.7, edgecolor="none"))
@@ -606,6 +658,7 @@ def save_plots(data, out_dir="plots", clip_pct=0):
         print(f"Saved plot: {out_png}")
     else:
         print("No Wirelength/TNS/fmax data to plot.")
+
 
 
 if __name__ == "__main__":
