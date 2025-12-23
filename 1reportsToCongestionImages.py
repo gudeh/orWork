@@ -1,14 +1,13 @@
 # To be run inside a ==>> platform/design <<== directory containing FLOW_VARIANTs.
 # Collects final_placement.webp and final_congestion.webp images from each run,
-# and generates comparison images per platform/design in ./output/.
+# and generates comparison images per platform/design in ./
 
 import os
 from PIL import Image, ImageDraw, ImageFont
 from collections import defaultdict
 
 input_dir = "."
-output_dir = "output"
-os.makedirs(output_dir, exist_ok=True)
+output_dir = "."
 
 # Which image types to include per design
 image_types = ["final_placement.webp", "final_congestion.webp", "final_worst_path.webp"]
@@ -25,8 +24,8 @@ platform = os.path.basename(os.path.dirname(cwd))
 for run_name in os.listdir(input_dir):
     run_path = os.path.join(input_dir, run_name)
     
-    # Skip non-directories and the output directory
-    if not os.path.isdir(run_path) or run_name == output_dir:
+    # Skip non-directories and the output directory (if it existed, though now it's .)
+    if not os.path.isdir(run_path):
         continue
 
     all_runs.add(run_name)
@@ -138,4 +137,4 @@ for (platform, design), type_dict in sorted(images.items()):
     final_img.save(out_path)
     print(f"Saved: {out_path}")
 
-print("All platform/design comparison images saved in ./output/")
+print("All platform/design comparison images saved in .")
