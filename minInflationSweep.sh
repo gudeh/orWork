@@ -1,12 +1,9 @@
 #!/usr/bin/env bash
 
-MIN_INFLATION_VALUES=(0.8 0.7)
-MAX_INFLATION_VALUES=(1.33 1.1)
-INFLATION_COEF_VALUES=(1.5 1.1 0.5)
+MIN_INFLATION_VALUES=(0.95)
+MAX_INFLATION_VALUES=(3 1.33 1.1)
+INFLATION_COEF_VALUES=(2 1.1 0.5)
 
-# MIN_INFLATION_VALUES=(0.95 0.9 0.85)
-# MAX_INFLATION_VALUES=(3 2 1.2)
-# INFLATION_COEF_VALUES=(2 1.5)
 
 DESIGN_CONFIG="designs/rapidus2hp/hercules_is_int/config.mk" 
 #DESIGN_CONFIG="designs/rapidus2hp/gcd/config.mk"
@@ -20,16 +17,17 @@ MAX_PARALLEL_JOBS=4
 TOTAL_JOBS=$(( ${#MIN_INFLATION_VALUES[@]} * ${#MAX_INFLATION_VALUES[@]} * ${#INFLATION_COEF_VALUES[@]} + 1 ))
 CURRENT_JOB=0
 
-# --- Launch Single Fixed Run ---
-CURRENT_JOB=$((CURRENT_JOB + 1))
-echo "----------------------------------------"
-echo "Launching fixed run (Job ${CURRENT_JOB}/${TOTAL_JOBS})"
-#SYNTH_HDL_FRONTEND=verific \
-#FASTROUTE_TCL="/workspace/7ORFS/flow/fastroute.tcl" \
 # Define common arguments for all runs
 BASE_ARGS="DESIGN_CONFIG=\"$DESIGN_CONFIG\" \
     PLATFORM_HOME=/workspace/rapidus/current/rapidus/ \
+    SYNTH_HDL_FRONTEND=verific \
+    FASTROUTE_TCL="/workspace/7ORFS/flow/fastroute.tcl" \
     $STRING_PARAM"
+
+# --- Launch Single Fixed Default Run ---
+CURRENT_JOB=$((CURRENT_JOB + 1))
+echo "----------------------------------------"
+echo "Launching fixed run (Job ${CURRENT_JOB}/${TOTAL_JOBS})"
 CMD="make $BASE_ARGS FLOW_VARIANT=\"default\""
 echo "Running: $CMD"
 eval "$CMD" > "logs/default.log" 2>&1 &

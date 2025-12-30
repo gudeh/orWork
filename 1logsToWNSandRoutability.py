@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 # Configuration
 LOG_DIR = "."
 OUTPUT_FILE = "variant_comparison_plots.png"
-SHOW_TNS = False  # Set to False to hide TNS plots
+SHOW_TNS = True  # Set to False to hide TNS plots
 
 def get_metrics(log_dir):
     data = {}
