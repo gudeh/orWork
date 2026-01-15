@@ -131,11 +131,13 @@ def parse_tighten_metrics(table):
     
     return large_improvements
 
-def run_update_ok(design, platform, config_path, platform_home=None):
+def run_update_ok(design, platform, config_path, platform_home=None, extra_args=None):
     """Run make update_ok and return output."""
     cmd = ['make', f'DESIGN_CONFIG={config_path}']
     if platform_home:
         cmd.append(f'PLATFORM_HOME={platform_home}')
+    if extra_args:
+        cmd.extend(extra_args)
     cmd.append('update_ok')
 
     print(f"Running: {' '.join(cmd)}")
@@ -157,11 +159,8 @@ def run_update_ok(design, platform, config_path, platform_home=None):
 def main():
     # Determine PLATFORM_HOME based on args
     platform_home = None
-    if len(sys.argv) > 1:
-        if sys.argv[1] == "rapidus":
-            platform_home = "/workspace/rapidus/current/rapidus"
-        elif sys.argv[1] == "gf12":
-            platform_home = "/platforms"
+    if len(sys.argv) > 1 and sys.argv[1] == "private":
+        platform_home = "/platforms"
 
     # Clear previous results
     with open(OUTPUT_FILE, 'w') as f:
@@ -181,57 +180,68 @@ def main():
     
     # Process each design
     for design, platform in designs:
+        if platform_home and platform not in ["rapidus2hp", "gf12"]:
+            continue
+
         config_path = f"./designs/{platform}/{design}/config.mk"
         
-        print("=" * 53)
-        print(f"make update_ok for {design} ({platform})...")
-        print("=" * 53)
-        
-        output = run_update_ok(design, platform, config_path, platform_home)
-        table = extract_table(output)
-        
-        if table:
-            print(table)
-            print()
+        variants = [([], "")]
+        if platform_home == "/platforms" and len(sys.argv) > 1 and sys.argv[1] == "private":
+            if platform in ["rapidus2hp", "gf12"]:
+                variants.append((["FLOW_VARIANT=verific"], " (verific)"))
+
+        for extra_args, suffix in variants:
+            print("=" * 53)
+            print(f"make update_ok for {design} ({platform}){suffix}...")
+            print("=" * 53)
             
-            # Check if output contains "Failing"
-            if "Failing" in output:
-                # Write to summary file
-                with open(OUTPUT_FILE, 'a') as f:
-                    f.write("=" * 53 + "\n")
-                    f.write(f"make update_ok for {design} ({platform})...\n")
-                    f.write("=" * 53 + "\n")
-                    f.write(table + "\n\n")
+            output = run_update_ok(design, platform, config_path, platform_home, extra_args)
+            table = extract_table(output)
+            
+            if table:
+                print(table)
+                print()
                 
-                designs_with_failing_checks.append(f"{design} ({platform})")
-                
-                # Check for large percentage changes
-                changes = parse_failing_metrics(table)
-                for change in changes:
-                    large_failing_changes.append({
+                # Check if output contains "Failing" or "Tighten"
+                if "Failing" in output or "Tighten" in output:
+                    # Write to summary file
+                    with open(OUTPUT_FILE, 'a') as f:
+                        f.write("=" * 53 + "\n")
+                        f.write(f"make update_ok for {design} ({platform}){suffix}...\n")
+                        f.write("=" * 53 + "\n")
+                        f.write(table + "\n\n")
+
+                # Check if output contains "Failing"
+                if "Failing" in output:
+                    designs_with_failing_checks.append(f"{design} ({platform}){suffix}")
+                    
+                    # Check for large percentage changes
+                    changes = parse_failing_metrics(table)
+                    for change in changes:
+                        large_failing_changes.append({
+                            'design': design,
+                            'platform': f"{platform}{suffix}",
+                            'metric': change['metric'],
+                            'percent': change['percent'],
+                            'old': change['old'],
+                            'new': change['new']
+                        })
+            
+                # Check for large improvements in Tighten metrics
+                improvements = parse_tighten_metrics(table)
+                for improvement in improvements:
+                    large_improvements.append({
                         'design': design,
-                        'platform': platform,
-                        'metric': change['metric'],
-                        'percent': change['percent'],
-                        'old': change['old'],
-                        'new': change['new']
+                        'platform': f"{platform}{suffix}",
+                        'metric': improvement['metric'],
+                        'percent': improvement['percent'],
+                        'old': improvement['old'],
+                        'new': improvement['new']
                     })
-            
-            # Check for large improvements in Tighten metrics
-            improvements = parse_tighten_metrics(table)
-            for improvement in improvements:
-                large_improvements.append({
-                    'design': design,
-                    'platform': platform,
-                    'metric': improvement['metric'],
-                    'percent': improvement['percent'],
-                    'old': improvement['old'],
-                    'new': improvement['new']
-                })
-        else:
-            print(f"No metrics table found for {design} ({platform})")
-            failed_designs.append(f"{design} ({platform})")
-            print()
+            else:
+                print(f"No metrics table found for {design} ({platform}){suffix}")
+                failed_designs.append(f"{design} ({platform}){suffix}")
+                print()
     
     # Final report
     print("-" * 53)
@@ -250,7 +260,10 @@ def main():
         print("\nNo designs had failing checks.")
     
     if large_failing_changes:
-        print(f"\nLarge percentage changes in failing metrics (>{LARGE_CHANGE_THRESHOLD}%):")
+        msg = f"\nLarge percentage changes in failing metrics (>{LARGE_CHANGE_THRESHOLD}%):"
+        print(msg)
+        with open(OUTPUT_FILE, 'a') as f:
+            f.write(msg + "\n")
         
         # Sort by percentage change (descending)
         large_failing_changes.sort(key=lambda x: float(x['percent']), reverse=True)
@@ -260,15 +273,21 @@ def main():
         max_metric_len = max(len(c['metric']) for c in large_failing_changes)
         max_percent_len = max(len(c['percent']) for c in large_failing_changes)
         
-        for change in large_failing_changes:
-            design_platform = f"{change['design']} ({change['platform']})"
-            print(f" - {design_platform:<{max_design_len}}  "
-                  f"{change['metric']:<{max_metric_len}}  "
-                  f"{change['percent']:>{max_percent_len}}%  "
-                  f"({change['old']} → {change['new']})")
+        with open(OUTPUT_FILE, 'a') as f:
+            for change in large_failing_changes:
+                design_platform = f"{change['design']} ({change['platform']})"
+                line = (f" - {design_platform:<{max_design_len}}  "
+                      f"{change['metric']:<{max_metric_len}}  "
+                      f"{change['percent']:>{max_percent_len}}%  "
+                      f"({change['old']} → {change['new']})")
+                print(line)
+                f.write(line + "\n")
     
     if large_improvements:
-        print(f"\nLarge percentage improvements in tighten metrics (>{LARGE_CHANGE_THRESHOLD}%):")
+        msg = f"\nLarge percentage improvements in tighten metrics (>{LARGE_CHANGE_THRESHOLD}%):"
+        print(msg)
+        with open(OUTPUT_FILE, 'a') as f:
+            f.write(msg + "\n")
         
         # Sort by absolute percentage change (descending)
         large_improvements.sort(key=lambda x: abs(float(x['percent'])), reverse=True)
@@ -278,12 +297,15 @@ def main():
         max_metric_len = max(len(c['metric']) for c in large_improvements)
         max_percent_len = max(len(c['percent']) for c in large_improvements)
         
-        for improvement in large_improvements:
-            design_platform = f"{improvement['design']} ({improvement['platform']})"
-            print(f" - {design_platform:<{max_design_len}}  "
-                  f"{improvement['metric']:<{max_metric_len}}  "
-                  f"{improvement['percent']:>{max_percent_len}}%  "
-                  f"({improvement['old']} → {improvement['new']})")
+        with open(OUTPUT_FILE, 'a') as f:
+            for improvement in large_improvements:
+                design_platform = f"{improvement['design']} ({improvement['platform']})"
+                line = (f" - {design_platform:<{max_design_len}}  "
+                      f"{improvement['metric']:<{max_metric_len}}  "
+                      f"{improvement['percent']:>{max_percent_len}}%  "
+                      f"({improvement['old']} → {improvement['new']})")
+                print(line)
+                f.write(line + "\n")
     
     print("\n" + "-" * 53)
     print("Summary counts:")

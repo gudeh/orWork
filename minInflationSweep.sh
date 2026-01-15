@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 
-MIN_INFLATION_VALUES=(0.95)
-MAX_INFLATION_VALUES=(3 1.33 1.1)
-INFLATION_COEF_VALUES=(2 1.1 0.5)
+MIN_INFLATION_VALUES=(0.95 0.8)
+MAX_INFLATION_VALUES=(3 1.33)
+INFLATION_COEF_VALUES=(2 0.5)
 
 
-DESIGN_CONFIG="designs/rapidus2hp/hercules_is_int/config.mk" 
-#DESIGN_CONFIG="designs/rapidus2hp/gcd/config.mk"
+#DESIGN_CONFIG="designs/rapidus2hp/hercules_is_int/config.mk" 
+DESIGN_CONFIG="designs/rapidus2hp/gcd/config.mk"
 PLATFORM=$(echo "$DESIGN_CONFIG" | cut -d'/' -f2)
 DESIGN=$(echo "$DESIGN_CONFIG" | cut -d'/' -f3)
 
@@ -17,11 +17,12 @@ MAX_PARALLEL_JOBS=4
 TOTAL_JOBS=$(( ${#MIN_INFLATION_VALUES[@]} * ${#MAX_INFLATION_VALUES[@]} * ${#INFLATION_COEF_VALUES[@]} + 1 ))
 CURRENT_JOB=0
 
+
+# SYNTH_HDL_FRONTEND=verific \
+# FASTROUTE_TCL="/workspace/7ORFS/flow/fastroute.tcl" \
 # Define common arguments for all runs
 BASE_ARGS="DESIGN_CONFIG=\"$DESIGN_CONFIG\" \
-    PLATFORM_HOME=/workspace/rapidus/current/rapidus/ \
-    SYNTH_HDL_FRONTEND=verific \
-    FASTROUTE_TCL="/workspace/7ORFS/flow/fastroute.tcl" \
+    PLATFORM_HOME=/platforms \
     $STRING_PARAM"
 
 # --- Launch Single Fixed Default Run ---
