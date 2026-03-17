@@ -12,6 +12,10 @@ def parse_logs_from_zip(zip_path):
     data = defaultdict(lambda: defaultdict(lambda: defaultdict(dict)))
     
     pattern = re.compile(r"(\d+_\d+_\w+)\.log:.* (\d+)% utilization")
+    # [INFO IFP-0107] Defining die area using utilization: 45.00% and aspect ratio: 1.
+    user_util_pattern = re.compile(r"IFP-0107.*utilization:\s*([\d.]+)%")
+    # [INFO IFP-0104] Effective utilization:                0.459
+    effective_util_pattern = re.compile(r"IFP-0104.*Effective utilization:\s*([\d.]+)")
 
     if not os.path.exists(zip_path):
         print(f"Error: {zip_path} not found.")
@@ -22,35 +26,48 @@ def parse_logs_from_zip(zip_path):
             # Skip directories and non-log files
             if file_info.is_dir() or not file_info.filename.endswith(".log"):
                 continue
-                
+
             try:
                 with z.open(file_info) as f:
                     content = f.read().decode('utf-8', errors='ignore')
+                    internal_path = Path(file_info.filename)
+                    parts = internal_path.parts
+
+                    if len(parts) < 4:
+                        continue
+
+                    offset = 1 if parts[0] == 'logs' else 0
+                    platform = parts[offset]
+                    design   = parts[offset + 1]
+                    variant  = parts[offset + 2]
+
                     for line in content.splitlines():
+                        # Existing: design area utilization per stage
                         if "design area" in line.lower():
-                            internal_path = Path(file_info.filename)
                             match = pattern.search(f"{internal_path.name}:{line}")
-                            
+
                             if match:
                                 stage, util_val = match.groups()
                                 util = int(util_val)
-                                
+
                                 if util > 0:
-                                    parts = internal_path.parts
-                                    
-                                    # Logic to find platform and variant regardless of 'logs/' prefix
-                                    # We look for the index of the design name to pivot
-                                    # parts example: ('logs', 'rapidus2hp', 'cva6', 'base', '2_1_floorplan.log')
-                                    if len(parts) >= 4:
-                                        # If 'logs' is the first folder, indices are 1, 2, 3
-                                        # If platform is the first folder, indices are 0, 1, 2
-                                        offset = 1 if parts[0] == 'logs' else 0
-                                        
-                                        platform = parts[offset]
-                                        design   = parts[offset + 1]
-                                        variant  = parts[offset + 2]
-                                        
                                         data[(platform, variant)][design][stage] = util
+
+                        # User-given utilization (may not be present)
+                        elif "IFP-0107" in line:
+                            match = user_util_pattern.search(line)
+                            if match:
+                                util = float(match.group(1))
+                                if util > 0:
+                                    data[(platform, variant)][design]["0_0_user_util"] = round(util)
+
+                        # Effective utilization (decimal, convert to %)
+                        elif "IFP-0104" in line:
+                            match = effective_util_pattern.search(line)
+                            if match:
+                                util = float(match.group(1)) * 100
+                                if util > 0:
+                                    data[(platform, variant)][design]["0_1_effective_util"] = round(util)
             except Exception as e:
                 print(f"Could not read {file_info.filename}: {e}")
             
