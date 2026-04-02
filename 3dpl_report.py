@@ -161,8 +161,8 @@ def collect_data(logs_dir):
                     "stage_caller": call_label,
                     "start_util": call.get("start_util", ""),
                     "converge": converge,
-                    "phase1_iters": call.get("phase1_iters", "") if call.get("converged") else "",
-                    "phase2_iters": call.get("phase2_iters", "") if call.get("converged") else "",
+                    "phase1_iters": call.get("phase1_iters", ""),
+                    "phase2_iters": call.get("phase2_iters", ""),
                     "displacement": call.get("displacement", ""),
                     "deltaWL": call.get("deltaWL", ""),
                     "runtime_s": info.get("runtime", ""),
@@ -204,16 +204,20 @@ KEYS = ["run", "platform", "design", "stage_caller", "start_util",
         "converge", "phase1_iters", "phase2_iters", "displacement", "deltaWL", "runtime_s"]
 
 
-def write_csv(rows, output_dir, design):
-    """Write rows for a design to a CSV file."""
-    design_rows = [r for r in rows if r["design"] == design]
-    if not design_rows:
+def write_csv(rows, output_dir, design=None):
+    """Write rows to a CSV file. If design is given, filters to that design."""
+    if design is not None:
+        rows = [r for r in rows if r["design"] == design]
+        filename = f"dpl_report_{design}.csv"
+    else:
+        filename = "dpl_report_all.csv"
+    if not rows:
         return
-    csv_path = os.path.join(output_dir, f"dpl_report_{design}.csv")
+    csv_path = os.path.join(output_dir, filename)
     with open(csv_path, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(HEADERS)
-        for r in design_rows:
+        for r in rows:
             writer.writerow([fmt_val(r[k]) for k in KEYS])
     print(f"Wrote {csv_path}")
 
@@ -401,11 +405,14 @@ def main():
 
     # Group by design: print table and write CSV
     designs = sorted(set(r["design"] for r in rows))
+    output_dir = os.path.dirname(logs_dir) or "."
     for design in designs:
         print(f"=== {design} ===")
         print_table(rows, design)
-        write_csv(rows, os.path.dirname(logs_dir) or ".", design)
-        print_comparison(rows, design, os.path.dirname(logs_dir) or ".")
+        write_csv(rows, output_dir, design)
+        print_comparison(rows, design, output_dir)
+
+    write_csv(rows, output_dir)
 
 
 if __name__ == "__main__":
