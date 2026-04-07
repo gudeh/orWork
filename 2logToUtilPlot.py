@@ -87,23 +87,33 @@ def plot_data(data):
         colors = cm.get_cmap('tab20')(np.linspace(0, 1, min(num_designs, 20)))
         line_styles = ['-', '--', '-.', ':']
         
+        # Collect all stages across all designs, with 0_-prefixed summary stages last
+        all_stages = set()
+        for stages_dict in designs.values():
+            all_stages.update(stages_dict.keys())
+        sorted_all_stages = sorted(all_stages)
+        stage_to_x = {stage: i for i, stage in enumerate(sorted_all_stages)}
+
         for i, design_name in enumerate(design_names):
             stages_dict = designs[design_name]
-            sorted_stages = sorted(stages_dict.keys())
-            utils = [stages_dict[s] for s in sorted_stages]
-            
+            design_stages = [s for s in sorted_all_stages if s in stages_dict]
+            x_vals = [stage_to_x[s] for s in design_stages]
+            utils = [stages_dict[s] for s in design_stages]
+
             color = colors[i % 20]
             style = line_styles[(i // 20) % len(line_styles)]
-            
-            ax.plot(sorted_stages, utils, 
-                    marker='o', linestyle=style, color=color, 
+
+            ax.plot(x_vals, utils,
+                    marker='o', linestyle=style, color=color,
                     label=design_name, linewidth=1.5, markersize=4)
+
+        ax.set_xticks(range(len(sorted_all_stages)))
+        ax.set_xticklabels(sorted_all_stages, rotation=45, ha='right')
 
         ax.set_title(f"Utilization per Stage\nPlatform: {platform} | Variant: {variant}", fontsize=14, pad=20)
         ax.set_xlabel("Design Stage", fontsize=12)
         ax.set_ylabel("Utilization (%)", fontsize=12)
         ax.grid(True, linestyle='--', alpha=0.6)
-        plt.xticks(rotation=45, ha='right')
         
         num_cols = 1 if num_designs <= 20 else 2
         plt.subplots_adjust(right=0.75 if num_cols == 2 else 0.85)
