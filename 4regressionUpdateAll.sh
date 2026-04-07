@@ -5,9 +5,9 @@
 
 # Update .ok files for all failed tests found in ctest output.
 #
-# Usage:
-#   --rerun-failed
+# Usage:   
 #   ctest --test-dir ./build --output-on-failure -j 32 2>&1 | tee ctest_output.txt | ./updateOkAll.sh
+#   ctest --test-dir ./build --output-on-failure --rerun-failed -j 32 2>&1 | tee check_fixed.txt
 #   ./updateOkAll.sh ctest_output.txt
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
