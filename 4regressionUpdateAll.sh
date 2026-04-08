@@ -55,7 +55,11 @@ for module in "${!module_tests[@]}"; do
     fi
 
     echo "=== $module ==="
-    if [ -f "$test_dir/save_ok" ]; then
+    # The top-level test/save_ok is a legacy Tcl script whose test registry
+    # only covers flow tests, not the CMake-registered (or_integration_tests)
+    # tests.  Use it only for module sub-directories where save_ok is a bash
+    # script (those always support arbitrary test names).
+    if [ -f "$test_dir/save_ok" ] && [ "$module" != "openroad" ]; then
         # shellcheck disable=SC2086
         (cd "$test_dir" && ./save_ok ${module_tests[$module]})
     else
