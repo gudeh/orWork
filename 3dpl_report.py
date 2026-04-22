@@ -1,11 +1,50 @@
 #!/usr/bin/env python3
-"""Generate DPL (detailed placement legalizer) report tables from OpenROAD JSON logs."""
+"""Generate DPL (detailed placement legalizer) report tables from OpenROAD JSON logs.
+
+Usage
+-----
+Mode 1 — logs/ directory (default):
+  python 3dpl_report.py [/path/to/logs]
+
+  Expected structure:
+    <logs_dir>/<platform>/<design>/<run>/<stage>.json
+    <logs_dir>/<platform>/<design>/<run>/<stage>.log
+
+  Master pairing: runs named 'master<N>' are paired against runs named '<N>'.
+  CSV and comparison tables are written next to <logs_dir>.
+
+Mode 2 — zip files (one or more .zip arguments, or a directory containing them):
+  python 3dpl_report.py master.zip branch.zip [...]
+  python 3dpl_report.py /path/to/dir/with/zips/
+
+  Each zip must contain a logs/ directory at its root with the structure:
+    logs/<platform>/<design>/<run>/<stage>.json
+    logs/<platform>/<design>/<run>/<stage>.log
+
+  The zip filename stem becomes the run label (e.g. master.zip → 'master').
+  A zip named 'master.zip' is the baseline for all comparisons.
+  CSV and comparison tables are written next to the first zip file.
+
+Mode 3 — sibling directories (no logs/ found and no explicit path given):
+  cd /some/dir && python /path/to/3dpl_report.py
+
+  Expected structure:
+    <cwd>/master/<platform>/<design>/<run>/<stage>.json   <- baseline
+    <cwd>/run51/<platform>/<design>/<run>/<stage>.json    <- candidate
+    ...
+
+  Each immediate subdirectory of cwd is treated as a separate labeled run.
+  A subdirectory literally named 'master' is the baseline for all comparisons.
+  CSV and comparison tables are written to cwd.
+"""
 
 import csv
 import json
 import os
 import re
 import sys
+import tempfile
+import zipfile
 from collections import defaultdict
 from itertools import zip_longest
 from pathlib import Path
@@ -49,15 +88,17 @@ def extract_dpl_calls(entries, caller):
                 calls.append(current)
             current = {"start_util": val}
         elif current is not None:
-            if suffix == "HL__converge__phase_1__iteration":
+            if suffix == "negotiation__converge__phase_1__iteration":
                 current["converged"] = True
                 current["phase1_iters"] = val
-            elif suffix == "HL__converge__phase_2__iteration":
+            elif suffix == "negotiation__converge__phase_2__iteration":
                 current["phase2_iters"] = val
-            elif suffix == "HL__no__converge__final_violations":
+            elif suffix == "negotiation__no__converge__final_violations":
                 current["converged"] = False
-            elif suffix == "design__instance__displacement__total":
+            elif suffix == "dpl__instance__displacement__total":
                 current["displacement"] = val
+            elif suffix == "dpl__total__moves":
+                current["total_moves"] = val
             elif suffix == "dpl__hpwl__delta__percent":
                 current["deltaWL"] = val
 
@@ -72,6 +113,32 @@ def extract_dpl_calls(entries, caller):
     return calls
 
 
+def extract_dpo_data(entries, caller):
+    """Extract DPO (improve_placement) metrics for a given caller.
+
+    Returns a dict with DPO fields, or empty dict if DPO did not run.
+    """
+    prefix = f"{caller}__dpo__"
+    dpo = {}
+    for key, val in entries:
+        if not key.startswith(prefix):
+            continue
+        suffix = key[len(prefix):]
+        if suffix == "total__attempts":
+            dpo["dpo_attempts"] = val
+        elif suffix == "relocated__cells":
+            dpo["dpo_relocated"] = val
+        elif suffix == "design__instance__displacement__total":
+            dpo["dpo_displacement"] = val
+        elif suffix == "design__instance__displacement__mean":
+            dpo["dpo_disp_avg"] = val
+        elif suffix == "design__instance__displacement__max":
+            dpo["dpo_disp_max"] = val
+        elif suffix == "hpwl__delta__percent":
+            dpo["dpo_deltaWL"] = val
+    return dpo
+
+
 # Determine which callers can appear in which stage files
 STAGE_CALLERS = {
     "place_dp": ["detailedplace"],
@@ -81,19 +148,29 @@ STAGE_CALLERS = {
 
 
 def extract_dpl_log_info(log_file):
-    """Extract runtimes and errors for each detailed_placement call from a log file.
+    """Extract runtimes, errors, and legalizer type for each DPL call from a log file.
 
-    Returns list of dicts with 'runtime' and 'error' keys, one per DPL call.
+    Detects both explicit Tcl calls (preceded by 'detailed_placement' command echo)
+    and internal C++ calls (repair_antennas, GRT congestion) which only emit
+    DPL-1101/1102 log lines with no command echo or runtime.
+
+    Returns list of dicts with 'runtime', 'error', and 'legalizer' keys per DPL call.
+    'legalizer' is 'negotiation' (DPL-1102) or 'diamond' (DPL-1101).
     """
     calls = []
     current = None
+    pending_tcl = False  # saw a "detailed_placement" command echo before next DPL block
     try:
         with open(log_file) as f:
             for line in f:
                 if re.search(r'^detailed_placement\b', line):
+                    pending_tcl = True
+                elif re.search(r'\[INFO DPL-110[12]\]', line):
                     if current is not None:
                         calls.append(current)
-                    current = {"runtime": "", "error": False}
+                    legalizer = "negotiation" if "DPL-1102" in line else "diamond"
+                    current = {"runtime": "", "error": False, "legalizer": legalizer}
+                    pending_tcl = False
                 elif current is not None:
                     m = re.match(r'.*Took\s+(\d+)\s+seconds:\s+detailed_placement', line)
                     if m:
@@ -107,18 +184,24 @@ def extract_dpl_log_info(log_file):
     return calls
 
 
-def collect_data(logs_dir):
-    """Walk logs_dir and collect all DPL call records."""
+def collect_data(logs_dir, run_label=None):
+    """Walk logs_dir and collect all DPL call records.
+
+    If run_label is given it overrides the run directory name in the path,
+    used when each top-level sibling directory is itself a logs root.
+    """
     rows = []
     logs_path = Path(logs_dir)
 
     for json_file in sorted(logs_path.rglob("*.json")):
-        # Parse path: logs/[platform]/[design]/[run]/[stage].json
+        # Parse path: [platform]/[design]/[run]/[stage].json
         rel = json_file.relative_to(logs_path)
         parts = rel.parts
         if len(parts) != 4:
             continue
         platform, design, run, stage_file = parts
+        if run_label is not None:
+            run = run_label
         stage_name = stage_file.replace(".json", "")
         # e.g. "3_5_place_dp" -> extract last part after digit prefixes
         stage_key = None
@@ -136,6 +219,7 @@ def collect_data(logs_dir):
         entries = parse_json_preserve_duplicates(json_file)
         runtime_idx = 0
         for caller in STAGE_CALLERS[stage_key]:
+            dpo = extract_dpo_data(entries, caller)
             dpl_calls = extract_dpl_calls(entries, caller)
             for i, call in enumerate(dpl_calls):
                 call_label = caller if len(dpl_calls) == 1 else f"{caller}[{i}]"
@@ -154,18 +238,26 @@ def collect_data(logs_dir):
                     converge = "yes"
                 else:
                     converge = ""
+                # DPO runs once per stage after all DPL calls; attach to last call only
+                is_last = (i == len(dpl_calls) - 1)
                 rows.append({
                     "run": run,
                     "platform": platform,
                     "design": design,
                     "stage_caller": call_label,
+                    "legalizer": info.get("legalizer", ""),
                     "start_util": call.get("start_util", ""),
                     "converge": converge,
                     "phase1_iters": call.get("phase1_iters", ""),
                     "phase2_iters": call.get("phase2_iters", ""),
-                    "displacement": call.get("displacement", ""),
-                    "deltaWL": call.get("deltaWL", ""),
+                    "dpl_moves": call.get("total_moves", ""),
+                    "dpl_disp": call.get("displacement", ""),
+                    "dpl_deltaWL": call.get("deltaWL", ""),
                     "runtime_s": info.get("runtime", ""),
+                    "dpo_attempts": dpo.get("dpo_attempts", "") if is_last else "",
+                    "dpo_relocated": dpo.get("dpo_relocated", "") if is_last else "",
+                    "dpo_displacement": dpo.get("dpo_displacement", "") if is_last else "",
+                    "dpo_deltaWL": dpo.get("dpo_deltaWL", "") if is_last else "",
                 })
     return rows
 
@@ -177,10 +269,8 @@ def print_table(rows, design=None):
     if not rows:
         return
 
-    headers = ["run", "platform", "design", "stage_caller", "start_util",
-               "converge?", "phase1_iters", "phase2_iters", "displacement", "deltaWL", "runtime_s"]
-    keys = ["run", "platform", "design", "stage_caller", "start_util",
-            "converge", "phase1_iters", "phase2_iters", "displacement", "deltaWL", "runtime_s"]
+    headers = HEADERS
+    keys = KEYS
 
     # Compute column widths
     widths = [len(h) for h in headers]
@@ -198,10 +288,12 @@ def print_table(rows, design=None):
     print()
 
 
-HEADERS = ["run", "platform", "design", "stage_caller", "start_util",
-           "converge?", "phase1_iters", "phase2_iters", "displacement", "deltaWL", "runtime_s"]
-KEYS = ["run", "platform", "design", "stage_caller", "start_util",
-        "converge", "phase1_iters", "phase2_iters", "displacement", "deltaWL", "runtime_s"]
+HEADERS = ["run", "platform", "design", "stage_caller", "legalizer", "start_util",
+           "converge?", "phase1_iters", "phase2_iters", "dpl_moves", "dpl_disp", "dpl_deltaWL%", "runtime_s",
+           "dpo_attempts", "dpo_relocated", "dpo_disp", "dpo_deltaWL%"]
+KEYS = ["run", "platform", "design", "stage_caller", "legalizer", "start_util",
+        "converge", "phase1_iters", "phase2_iters", "dpl_moves", "dpl_disp", "dpl_deltaWL", "runtime_s",
+        "dpo_attempts", "dpo_relocated", "dpo_displacement", "dpo_deltaWL"]
 
 
 def write_csv(rows, output_dir, design=None):
@@ -210,7 +302,7 @@ def write_csv(rows, output_dir, design=None):
         rows = [r for r in rows if r["design"] == design]
         filename = f"dpl_report_{design}.csv"
     else:
-        filename = "dpl_report_all.csv"
+        filename = "0dpl_report_all.csv"
     if not rows:
         return
     csv_path = os.path.join(output_dir, filename)
@@ -222,7 +314,8 @@ def write_csv(rows, output_dir, design=None):
     print(f"Wrote {csv_path}")
 
 
-NUMERIC_KEYS = ["start_util", "phase1_iters", "phase2_iters", "displacement", "deltaWL", "runtime_s"]
+NUMERIC_KEYS = ["start_util", "phase1_iters", "phase2_iters", "dpl_moves", "dpl_disp", "dpl_deltaWL", "runtime_s",
+                "dpo_attempts", "dpo_relocated", "dpo_displacement", "dpo_deltaWL"]
 
 
 def fmt_val(v):
@@ -230,7 +323,8 @@ def fmt_val(v):
     if isinstance(v, float):
         return f"{v:.1f}"
     return str(v)
-PCT_KEYS = ["displacement", "deltaWL", "runtime_s"]
+PCT_KEYS = ["dpl_disp", "dpl_deltaWL", "runtime_s",
+            "dpo_attempts", "dpo_relocated", "dpo_displacement", "dpo_deltaWL"]
 
 
 def parse_run_id(run):
@@ -244,24 +338,40 @@ def parse_run_id(run):
 def find_pairs(rows, design):
     """Find (run, master_run) pairs for a design.
 
+    Supports two pairing modes:
+    - Named master: a run literally named 'master' is paired against all others.
+    - Prefixed master: runs named 'master<N>' are paired against run '<N>'.
+
     Returns list of (base_id, run_rows, master_rows) sorted by base_id.
     """
     design_rows = [r for r in rows if r["design"] == design]
-    # Group by (base_id, is_master)
     groups = defaultdict(list)
     for r in design_rows:
+        groups[r["run"]].append(r)
+
+    run_names = sorted(groups.keys())
+
+    # Named-master mode: one run is literally called 'master'
+    if "master" in run_names:
+        master_rows = groups["master"]
+        pairs = []
+        for name in run_names:
+            if name == "master":
+                continue
+            pairs.append((name, groups[name], master_rows))
+        return pairs
+
+    # Prefixed-master mode: 'master<N>' pairs with '<N>'
+    groups2 = defaultdict(list)
+    for r in design_rows:
         base_id, is_master = parse_run_id(r["run"])
-        groups[(base_id, is_master)].append(r)
+        groups2[(base_id, is_master)].append(r)
 
-    # Find base_ids that have both a non-master and master variant
-    base_ids = set()
-    for (base_id, is_master) in groups:
-        base_ids.add(base_id)
-
+    base_ids = sorted({base_id for base_id, _ in groups2})
     pairs = []
-    for base_id in sorted(base_ids):
-        run_rows = groups.get((base_id, False), [])
-        master_rows = groups.get((base_id, True), [])
+    for base_id in base_ids:
+        run_rows = groups2.get((base_id, False), [])
+        master_rows = groups2.get((base_id, True), [])
         if run_rows and master_rows:
             pairs.append((base_id, run_rows, master_rows))
     return pairs
@@ -292,6 +402,8 @@ def compute_delta(run_row, master_row):
         else:
             delta[k] = ""
     delta["run"] = "delta"
+    delta["platform"] = run_row.get("platform", "")
+    delta["design"] = run_row.get("design", "")
     delta["stage_caller"] = run_row["stage_caller"]
 
     # Compare convergence: show improvement/degradation vs master
@@ -342,10 +454,13 @@ def print_generic_table(rows, headers, keys):
 
 
 def print_comparison(rows, design, output_dir="."):
-    """Print interleaved comparison table and delta table for paired runs."""
+    """Print interleaved comparison table and delta table for paired runs.
+
+    Returns list of delta rows for the design (may be empty).
+    """
     pairs = find_pairs(rows, design)
     if not pairs:
-        return
+        return []
 
     print(f"=== {design} — comparison ===")
     interleaved = []
@@ -382,10 +497,12 @@ def print_comparison(rows, design, output_dir="."):
     print_generic_table(interleaved, HEADERS, KEYS)
 
     if all_deltas:
-        delta_headers = ["run", "stage_caller", "converge?", "start_util", "phase1_iters",
-                         "phase2_iters", "displacement", "disp%", "deltaWL", "dWL%", "runtime_s", "rt%"]
-        delta_keys = ["run", "stage_caller", "converge", "start_util", "phase1_iters",
-                      "phase2_iters", "displacement", "displacement_pct", "deltaWL", "deltaWL_pct", "runtime_s", "runtime_s_pct"]
+        delta_headers = ["run", "platform", "design", "stage_caller", "converge?", "start_util", "phase1_iters",
+                         "phase2_iters", "dpl_moves", "dpl_disp", "dpl_disp%", "dpl_deltaWL%", "dWL%", "runtime_s", "rt%",
+                         "dpo_attempts", "dpo_att%", "dpo_relocated", "dpo_rel%", "dpo_disp", "dpo_disp%", "dpo_deltaWL%", "dDWL%"]
+        delta_keys = ["run", "platform", "design", "stage_caller", "converge", "start_util", "phase1_iters",
+                      "phase2_iters", "dpl_moves", "dpl_disp", "dpl_disp_pct", "dpl_deltaWL", "dpl_deltaWL_pct", "runtime_s", "runtime_s_pct",
+                      "dpo_attempts", "dpo_attempts_pct", "dpo_relocated", "dpo_relocated_pct", "dpo_displacement", "dpo_displacement_pct", "dpo_deltaWL", "dpo_deltaWL_pct"]
         print(f"=== {design} — deltas only (run - master) ===")
         print_generic_table(all_deltas, delta_headers, delta_keys)
 
@@ -398,21 +515,89 @@ def print_comparison(rows, design, output_dir="."):
                 writer.writerow([fmt_val(r.get(k, "")) for k in delta_keys])
         print(f"Wrote {csv_path}")
 
+    return all_deltas
+
 
 def main():
-    logs_dir = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(__file__), "logs")
-    rows = collect_data(logs_dir)
+    cwd = Path.cwd()
+    args = sys.argv[1:]
+
+    # Resolve a single directory arg to the zip files inside it
+    if len(args) == 1 and Path(args[0]).is_dir():
+        zip_files = sorted(Path(args[0]).glob("*.zip"))
+        if zip_files:
+            args = [str(z) for z in zip_files]
+
+    if args and all(a.endswith(".zip") for a in args):
+        # Zip mode — extract each to a temp dir, use stem as run label
+        output_dir = Path(args[0]).parent
+        for csv_file in output_dir.glob("*.csv"):
+            csv_file.unlink()
+            print(f"Removed {csv_file}")
+        rows = []
+        with tempfile.TemporaryDirectory() as tmpdir:
+            for zip_arg in args:
+                zip_path = Path(zip_arg)
+                run_label = zip_path.stem
+                extract_root = Path(tmpdir) / run_label
+                with zipfile.ZipFile(zip_path) as z:
+                    z.extractall(extract_root)
+                logs_subdir = extract_root / "logs"
+                source = logs_subdir if logs_subdir.is_dir() else extract_root
+                rows.extend(collect_data(source, run_label=run_label))
+    elif args:
+        # Explicit logs directory path
+        logs_dir = Path(args[0])
+        output_dir = logs_dir.parent
+        for csv_file in output_dir.glob("*.csv"):
+            csv_file.unlink()
+            print(f"Removed {csv_file}")
+        rows = collect_data(logs_dir)
+    elif (cwd / "logs").is_dir():
+        # Mode 1: logs/ subdir found in cwd
+        logs_dir = cwd / "logs"
+        output_dir = cwd
+        for csv_file in output_dir.glob("*.csv"):
+            csv_file.unlink()
+            print(f"Removed {csv_file}")
+        rows = collect_data(logs_dir)
+    else:
+        # Mode 3: scan cwd subdirs, each is a labeled logs root
+        output_dir = cwd
+        for csv_file in output_dir.glob("*.csv"):
+            csv_file.unlink()
+            print(f"Removed {csv_file}")
+        subdirs = sorted(p for p in cwd.iterdir() if p.is_dir())
+        rows = []
+        for subdir in subdirs:
+            rows.extend(collect_data(subdir, run_label=subdir.name))
 
     # Group by design: print table and write CSV
     designs = sorted(set(r["design"] for r in rows))
-    output_dir = os.path.dirname(logs_dir) or "."
+    all_deltas = []
     for design in designs:
         print(f"=== {design} ===")
         print_table(rows, design)
-        write_csv(rows, output_dir, design)
-        print_comparison(rows, design, output_dir)
+        write_csv(rows, str(output_dir), design)
+        all_deltas.extend(print_comparison(rows, design, str(output_dir)))
 
-    write_csv(rows, output_dir)
+    write_csv(rows, str(output_dir))
+
+    # Write all-deltas CSV
+    if all_deltas:
+        delta_headers = ["run", "platform", "design", "stage_caller", "converge?", "start_util", "phase1_iters",
+                         "phase2_iters", "dpl_moves", "dpl_disp", "dpl_disp%", "dpl_deltaWL%", "dWL%", "runtime_s", "rt%",
+                         "dpo_attempts", "dpo_att%", "dpo_relocated", "dpo_rel%", "dpo_disp", "dpo_disp%", "dpo_deltaWL%", "dDWL%"]
+        delta_keys = ["run", "platform", "design", "stage_caller", "converge", "start_util", "phase1_iters",
+                      "phase2_iters", "dpl_moves", "dpl_disp", "dpl_disp_pct", "dpl_deltaWL", "dpl_deltaWL_pct", "runtime_s", "runtime_s_pct",
+                      "dpo_attempts", "dpo_attempts_pct", "dpo_relocated", "dpo_relocated_pct", "dpo_displacement", "dpo_displacement_pct", "dpo_deltaWL", "dpo_deltaWL_pct"]
+        csv_path = os.path.join(str(output_dir), "0dpl_report_all_deltas.csv")
+        with open(csv_path, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(delta_headers)
+            for r in all_deltas:
+                writer.writerow([fmt_val(r.get(k, "")) for k in delta_keys])
+        print(f"Wrote {csv_path}")
 
 
 if __name__ == "__main__":
