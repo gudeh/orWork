@@ -248,14 +248,23 @@ def parse_tighten_metrics(table):
     
     return large_improvements
 
+# Files each repo's update_ok runs actually modified and kept, keyed by
+# repo root. Only these are ever committed -- committing everything
+# `git diff` reports would sweep in unrelated working-tree changes
+# (stray deletions, submodule pointer bumps, ...).
+KEPT_FILES = {}
+
+
 def commit_updates_in(repo_root):
-    """git add + signed-off commit whatever's still modified in repo_root,
-    using the update_ok summary (with its non-'====' title line) as the
-    commit message. No-op if nothing was actually kept there."""
+    """git add + signed-off commit the files kept by this script's own
+    update_ok runs in repo_root, using the update_ok summary (with its
+    non-'====' title line) as the commit message. No-op if nothing was
+    actually kept there."""
     if not repo_root:
         return
 
-    modified = get_modified_files(repo_root)
+    # Restrict to files still modified, in case something reverted them.
+    modified = KEPT_FILES.get(repo_root, set()) & get_modified_files(repo_root)
     if not modified:
         return
 
@@ -387,7 +396,10 @@ def main():
                 # tighten-only run and revert.
                 real_failing = has_real_failing_metric(table)
 
-                if not real_failing:
+                if real_failing:
+                    KEPT_FILES.setdefault(repo_root, set()).update(
+                        files_after - files_before)
+                else:
                     revert_files(files_before, files_after, repo_root)
 
                 # Write to summary file only for designs that were actually updated

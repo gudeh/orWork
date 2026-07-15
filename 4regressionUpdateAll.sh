@@ -4,6 +4,11 @@
 ## Copyright (c) 2024-2026, The OpenROAD Authors
 
 # Full regression update workflow:
+#   0. Format/lint-fix Bazel files with buildifier (mirrors the CI check)
+#   0b. (optional) Run ALL top-level flow tests and update their metrics
+#       goldens (save_flow_metrics / save_flow_metrics_limits) — only when
+#       "flow" is passed as argument.  Flow tests (aes_sky130hd, gcd_*, ...)
+#       are NOT registered in ctest; they only run via test/regression.
 #   1. Run all tests  →  ctest_output.txt
 #   2. Update DEF golden files (save_defok) for failed tests
 #   3. Re-run failed tests  →  ctest_after_defok.txt
@@ -14,12 +19,19 @@
 # from the current working directory.
 #
 # Usage:
-#   /path/to/4regressionUpdateAll.sh
+#   /path/to/4regressionUpdateAll.sh [flow|only_flow]
+#     flow      — also run the full flow-test group (gcd_*, aes_*, ibex_*,
+#                 ...) and update their metrics goldens.  Skipped when absent.
+#                 CAUTION: each flow test is a full RTL-to-GDS run.
+#     only_flow — run ONLY the flow tests (and the cheap buildifier fix);
+#                 skip the ctest steps 1-5 entirely.
 #
 # Overrides (env vars):
 #   OPENROAD_ROOT=/path/to/repo   — explicit repo root
 #   BUILD_DIR=/path/to/build      — explicit build directory (default: <repo>/build)
 #   JOBS=16                       — ctest parallelism (default: nproc)
+#   FLOW_JOBS=5                   — parallel flow-test processes (default: 5);
+#                                   per-test logs: <repo>/flow_<test>.txt
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -61,9 +73,26 @@ CTEST_EMBEDDED_FIX="$REPO_ROOT/ctest_embedded_fix.txt"
 CTEST_AFTER_DEFOK="$REPO_ROOT/ctest_after_defok.txt"
 CHECK_OUTPUT="$REPO_ROOT/check_update.txt"
 
+RUN_FLOW=0
+RUN_CTEST=1
+case "${1:-}" in
+    "") ;;
+    flow) RUN_FLOW=1 ;;
+    only_flow)
+        RUN_FLOW=1
+        RUN_CTEST=0
+        ;;
+    *)
+        echo "Error: unknown argument '$1' (accepted: \"flow\", \"only_flow\")." >&2
+        exit 1
+        ;;
+esac
+
 echo "Repo root : $REPO_ROOT"
 echo "Build dir : $BUILD_DIR"
 echo "Jobs      : $JOBS"
+echo "Flow tests: $([ "$RUN_FLOW" -eq 1 ] && echo yes || echo no)"
+echo "Ctest     : $([ "$RUN_CTEST" -eq 1 ] && echo yes || echo no)"
 echo ""
 
 # ---------------------------------------------------------------------------
@@ -344,6 +373,150 @@ _run_save_ok() {
         fi
     done
 }
+
+# ---------------------------------------------------------------------------
+# Step 0: Fix Bazel file formatting/lint with buildifier.
+# CI runs `buildifier -lint=warn` over all tracked Bazel files and fails on any
+# warning (e.g. unsorted-dict-items after editing a test BUILD file).  The
+# repo's .buildifier.json sets mode=fix/lint=fix/warnings=all, so running
+# buildifier from the repo root auto-repairs everything CI would flag.
+# ---------------------------------------------------------------------------
+echo "=== Step 0/5: Fixing Bazel files with buildifier ==="
+BUILDIFIER="${BUILDIFIER:-}"
+if [ -z "$BUILDIFIER" ]; then
+    if [ -x "$REPO_ROOT/buildifier" ]; then
+        BUILDIFIER="$REPO_ROOT/buildifier"
+    elif command -v buildifier > /dev/null 2>&1; then
+        BUILDIFIER="buildifier"
+    fi
+fi
+if [ -n "$BUILDIFIER" ]; then
+    _bazel_state() {
+        (cd "$REPO_ROOT" && \
+            git ls-files -z ':(glob)**/*.bzl' ':(glob)**/*.bazel' \
+                ':(glob)**/BUILD' ':(glob)**/WORKSPACE' \
+            | xargs -0 -r md5sum)
+    }
+    before="$(_bazel_state)"
+    (cd "$REPO_ROOT" && \
+        git ls-files -z ':(glob)**/*.bzl' ':(glob)**/*.bazel' \
+            ':(glob)**/BUILD' ':(glob)**/WORKSPACE' \
+        | xargs -0 -r "$BUILDIFIER")
+    changed="$(diff <(echo "$before") <(_bazel_state) \
+        | awk '/^>/ {print $3}')"
+    if [ -n "$changed" ]; then
+        echo "buildifier fixed:"
+        echo "$changed" | sed 's/^/  /'
+    else
+        echo "No Bazel file changes needed."
+    fi
+else
+    echo "Warning: buildifier not found — skipping Bazel lint fix." >&2
+fi
+echo ""
+
+# ---------------------------------------------------------------------------
+# Step 0b (optional): Flow tests + metrics golden update.
+# Flow tests are not part of ctest — they run through test/regression.  For
+# failed tests, save_flow_metrics copies results/<test>-tcl.metrics over the
+# golden <test>.metrics, and save_flow_metrics_limits recomputes
+# <test>.metrics_limits from the same result metrics.  A re-run then verifies
+# the update took.
+# Note: only metrics mismatches are fixable this way — a flow test failing
+# for another reason (crash, "fail" last line) will still fail the re-run.
+#
+# Parallelism: the Tcl runner executes tests sequentially, so we launch one
+# ./regression <test> process per test (capped at $FLOW_JOBS).  Each test
+# writes uniquely-named results/<test>-tcl.* files, so parallel runs don't
+# collide — except results/failures, which every invocation deletes and
+# appends (a race).  We therefore detect failures from each process's exit
+# code (the runner exits with its failure count), not from that file.
+# ---------------------------------------------------------------------------
+
+# List the individual tests of the "flow" group using the repo's own Tcl
+# registry (regression_tests.tcl).  Prints one test name per line.
+_expand_flow_tests() {
+    (cd "$FLOW_DIR" && tclsh <<'EOF'
+set test_dir [file normalize .]
+set openroad_dir [file dirname $test_dir]
+source regression.tcl
+source regression_tests.tcl
+foreach t [expand_tests {flow}] { puts $t }
+EOF
+    )
+}
+
+# Run each given flow test as its own ./regression process, at most
+# $FLOW_JOBS at a time.  Per-test logs go to $REPO_ROOT/flow_<test>.txt.
+# Each process writes its exit code to a status file — more robust than
+# tracking pids (wait -n consumes job statuses on some bash versions).
+# Populates the flow_failed array.
+_run_flow_tests_parallel() {
+    local -a tests=("$@")
+    local status_dir
+    status_dir="$(mktemp -d)"
+    flow_failed=()
+
+    for t in "${tests[@]}"; do
+        while [ "$(jobs -rp | wc -l)" -ge "$FLOW_JOBS" ]; do
+            sleep 5
+        done
+        echo "  launching $t (log: flow_${t}.txt)"
+        (
+            cd "$FLOW_DIR" && ./regression "$t" \
+                > "$REPO_ROOT/flow_${t}.txt" 2>&1
+            echo $? > "$status_dir/$t"
+        ) &
+    done
+    wait
+
+    for t in "${tests[@]}"; do
+        # Missing status file = process died before writing it — treat as fail.
+        if [ "$(cat "$status_dir/$t" 2>/dev/null || echo 1)" != "0" ]; then
+            flow_failed+=("$t")
+        fi
+    done
+    rm -rf "$status_dir"
+}
+
+if [ "$RUN_FLOW" -eq 1 ]; then
+    echo "=== Step 0b: Running flow tests and updating metrics goldens ==="
+    FLOW_DIR="$REPO_ROOT/test"
+    FLOW_JOBS="${FLOW_JOBS:-5}"
+
+    mapfile -t flow_expanded < <(_expand_flow_tests)
+    echo "Running ${#flow_expanded[@]} flow test(s), $FLOW_JOBS in parallel:"
+
+    declare -a flow_failed
+    _run_flow_tests_parallel "${flow_expanded[@]}"
+
+    if [ ${#flow_failed[@]} -gt 0 ]; then
+        echo "Failed flow tests: ${flow_failed[*]}"
+
+        echo "--- save_flow_metrics ---"
+        (cd "$FLOW_DIR" && ./save_flow_metrics "${flow_failed[@]}")
+        echo "--- save_flow_metrics_limits ---"
+        (cd "$FLOW_DIR" && ./save_flow_metrics_limits "${flow_failed[@]}")
+
+        echo "Re-running ${#flow_failed[@]} flow test(s) to verify..."
+        _run_flow_tests_parallel "${flow_failed[@]}"
+        if [ ${#flow_failed[@]} -gt 0 ]; then
+            echo "WARNING: flow tests still failing after metrics update:"
+            printf '  %s\n' "${flow_failed[@]}"
+            echo "  (see flow_<test>.txt — likely not a metrics-only failure)"
+        else
+            echo "All flow tests pass after metrics update."
+        fi
+    else
+        echo "All flow tests passed — no metrics update needed."
+    fi
+    echo ""
+fi
+
+if [ "$RUN_CTEST" -eq 0 ]; then
+    echo "only_flow: skipping ctest steps 1-5."
+    exit 0
+fi
 
 # ---------------------------------------------------------------------------
 # Step 1: Run all tests
