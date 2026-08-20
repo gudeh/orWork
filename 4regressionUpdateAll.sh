@@ -15,11 +15,19 @@
 #   4. Update log golden files (save_ok) for still-failed tests
 #   5. Re-run failed tests  →  check_update.txt  (verification)
 #
+# Logs are written to a scratch directory that is deleted when the script
+# finishes, so a normal run leaves the repo clean.  Pass -v to write them into
+# the repo root instead and keep them.  A run that ends with something still
+# broken keeps its scratch directory and prints the path.
+#
 # Can be called from anywhere — the repo root is auto-detected by walking up
 # from the current working directory.
 #
 # Usage:
-#   /path/to/4regressionUpdateAll.sh [flow|only_flow]
+#   /path/to/4regressionUpdateAll.sh [-v] [flow|only_flow]
+#     -v        — keep the log files (ctest_output.txt, check_update.txt,
+#                 flow_<test>.txt, ...) in the repo root instead of discarding
+#                 them.
 #     flow      — also run the full flow-test group (gcd_*, aes_*, ibex_*,
 #                 ...) and update their metrics goldens.  Skipped when absent.
 #                 CAUTION: each flow test is a full RTL-to-GDS run.
@@ -31,7 +39,7 @@
 #   BUILD_DIR=/path/to/build      — explicit build directory (default: <repo>/build)
 #   JOBS=16                       — ctest parallelism (default: nproc)
 #   FLOW_JOBS=5                   — parallel flow-test processes (default: 5);
-#                                   per-test logs: <repo>/flow_<test>.txt
+#                                   per-test logs: <log dir>/flow_<test>.txt
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -68,31 +76,66 @@ fi
 BUILD_DIR="${BUILD_DIR:-$REPO_ROOT/build}"
 JOBS="${JOBS:-$(nproc 2>/dev/null || echo 32)}"
 
-CTEST_OUTPUT="$REPO_ROOT/ctest_output.txt"
-CTEST_EMBEDDED_FIX="$REPO_ROOT/ctest_embedded_fix.txt"
-CTEST_AFTER_DEFOK="$REPO_ROOT/ctest_after_defok.txt"
-CHECK_OUTPUT="$REPO_ROOT/check_update.txt"
-
 RUN_FLOW=0
 RUN_CTEST=1
-case "${1:-}" in
-    "") ;;
-    flow) RUN_FLOW=1 ;;
-    only_flow)
-        RUN_FLOW=1
-        RUN_CTEST=0
-        ;;
-    *)
-        echo "Error: unknown argument '$1' (accepted: \"flow\", \"only_flow\")." >&2
+VERBOSE=0
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -v | --verbose) VERBOSE=1 ;;
+        flow) RUN_FLOW=1 ;;
+        only_flow)
+            RUN_FLOW=1
+            RUN_CTEST=0
+            ;;
+        *)
+            echo "Error: unknown argument '$1'" \
+                "(accepted: \"-v\", \"flow\", \"only_flow\")." >&2
+            exit 1
+            ;;
+    esac
+    shift
+done
+
+# Where the ctest / flow-test logs go.  With -v they land in the repo root and
+# stay there; otherwise they go to a scratch directory removed on exit, so a
+# clean run doesn't litter `git status` with a dozen untracked .txt files.
+if [ "$VERBOSE" -eq 1 ]; then
+    LOG_DIR="$REPO_ROOT"
+    KEEP_LOGS=1
+else
+    if ! LOG_DIR="$(mktemp -d "${TMPDIR:-/tmp}/regressionUpdate.XXXXXX")"; then
+        echo "Error: could not create a temporary log directory." >&2
         exit 1
-        ;;
-esac
+    fi
+    KEEP_LOGS=0
+fi
+
+_cleanup_logs() {
+    if [ "$KEEP_LOGS" -eq 0 ] && [ -n "$LOG_DIR" ] && [ "$LOG_DIR" != "$REPO_ROOT" ]; then
+        rm -rf "$LOG_DIR"
+    fi
+}
+trap _cleanup_logs EXIT
+
+# Keep the scratch logs around — called when the run ends with something still
+# broken, since that is exactly when the logs are worth reading.
+_retain_logs() {
+    [ "$KEEP_LOGS" -eq 1 ] && return 0
+    KEEP_LOGS=1
+    echo "  (logs kept for inspection: $LOG_DIR)"
+}
+
+CTEST_OUTPUT="$LOG_DIR/ctest_output.txt"
+CTEST_EMBEDDED_FIX="$LOG_DIR/ctest_embedded_fix.txt"
+CTEST_AFTER_DEFOK="$LOG_DIR/ctest_after_defok.txt"
+CHECK_OUTPUT="$LOG_DIR/check_update.txt"
 
 echo "Repo root : $REPO_ROOT"
 echo "Build dir : $BUILD_DIR"
 echo "Jobs      : $JOBS"
 echo "Flow tests: $([ "$RUN_FLOW" -eq 1 ] && echo yes || echo no)"
 echo "Ctest     : $([ "$RUN_CTEST" -eq 1 ] && echo yes || echo no)"
+echo "Logs      : $LOG_DIR$([ "$VERBOSE" -eq 1 ] || echo " (temporary; -v to keep)")"
 echo ""
 
 # ---------------------------------------------------------------------------
@@ -447,7 +490,7 @@ EOF
 }
 
 # Run each given flow test as its own ./regression process, at most
-# $FLOW_JOBS at a time.  Per-test logs go to $REPO_ROOT/flow_<test>.txt.
+# $FLOW_JOBS at a time.  Per-test logs go to $LOG_DIR/flow_<test>.txt.
 # Each process writes its exit code to a status file — more robust than
 # tracking pids (wait -n consumes job statuses on some bash versions).
 # Populates the flow_failed array.
@@ -461,10 +504,10 @@ _run_flow_tests_parallel() {
         while [ "$(jobs -rp | wc -l)" -ge "$FLOW_JOBS" ]; do
             sleep 5
         done
-        echo "  launching $t (log: flow_${t}.txt)"
+        echo "  launching $t (log: $LOG_DIR/flow_${t}.txt)"
         (
             cd "$FLOW_DIR" && ./regression "$t" \
-                > "$REPO_ROOT/flow_${t}.txt" 2>&1
+                > "$LOG_DIR/flow_${t}.txt" 2>&1
             echo $? > "$status_dir/$t"
         ) &
     done
@@ -482,7 +525,7 @@ _run_flow_tests_parallel() {
 if [ "$RUN_FLOW" -eq 1 ]; then
     echo "=== Step 0b: Running flow tests and updating metrics goldens ==="
     FLOW_DIR="$REPO_ROOT/test"
-    FLOW_JOBS="${FLOW_JOBS:-5}"
+    FLOW_JOBS="${FLOW_JOBS:-4}"
 
     mapfile -t flow_expanded < <(_expand_flow_tests)
     echo "Running ${#flow_expanded[@]} flow test(s), $FLOW_JOBS in parallel:"
@@ -503,7 +546,8 @@ if [ "$RUN_FLOW" -eq 1 ]; then
         if [ ${#flow_failed[@]} -gt 0 ]; then
             echo "WARNING: flow tests still failing after metrics update:"
             printf '  %s\n' "${flow_failed[@]}"
-            echo "  (see flow_<test>.txt — likely not a metrics-only failure)"
+            echo "  (see $LOG_DIR/flow_<test>.txt — likely not a metrics-only failure)"
+            _retain_logs
         else
             echo "All flow tests pass after metrics update."
         fi
@@ -523,6 +567,7 @@ fi
 # ---------------------------------------------------------------------------
 echo "=== Step 1/5: Running all tests ==="
 ctest --test-dir "$BUILD_DIR" --output-on-failure -j "$JOBS" > "$CTEST_OUTPUT" 2>&1
+ctest_rc=$?
 echo ""
 
 declare -A module_tests
@@ -540,6 +585,14 @@ if [ ${#embedded_diff_tests[@]} -gt 0 ]; then
 fi
 
 if [ ${#module_tests[@]} -eq 0 ] && [ ${#embedded_diff_tests[@]} -eq 0 ]; then
+    # ctest failing without any parsed test failure means it never got to run
+    # the suite (missing/stale build dir, bad -j, ...) — don't call that a pass.
+    if [ "$ctest_rc" -ne 0 ]; then
+        echo "Error: ctest exited $ctest_rc but reported no failed tests." >&2
+        echo "       Is $BUILD_DIR a configured build directory?" >&2
+        _retain_logs
+        exit "$ctest_rc"
+    fi
     echo "All tests passed — nothing to update."
     exit 0
 fi
@@ -573,7 +626,7 @@ _parse_failures "$CTEST_AFTER_DEFOK"
 
 if [ ${#module_tests[@]} -eq 0 ]; then
     echo "All tests pass after save_defok — no log golden update needed."
-    echo "Log: $CTEST_AFTER_DEFOK"
+    [ "$VERBOSE" -eq 1 ] && echo "Log: $CTEST_AFTER_DEFOK"
     exit 0
 fi
 
@@ -594,6 +647,14 @@ echo "=== Step 5/5: Verifying updates ==="
 ctest --test-dir "$BUILD_DIR" --rerun-failed --output-on-failure -j "$JOBS" > "$CHECK_OUTPUT" 2>&1
 echo ""
 
+_parse_failures "$CHECK_OUTPUT"
+if [ ${#module_tests[@]} -gt 0 ]; then
+    echo "WARNING: still failing after the golden update: ${!module_tests[*]}"
+    echo "  (not a golden mismatch — crash, timeout or a real regression)"
+    _retain_logs
+    echo ""
+fi
+
 echo "--- Checking for embedded diff failures in .ok files ---"
 embedded_diff_hits="$(grep -ril "Differences found at line" \
     "$REPO_ROOT/src" "$REPO_ROOT/test" --include="*.ok" 2>/dev/null)"
@@ -605,8 +666,14 @@ else
 fi
 echo ""
 
-echo "Logs saved:"
-echo "  Initial run        : $CTEST_OUTPUT"
-echo "  Embedded diff fix  : $CTEST_EMBEDDED_FIX"
-echo "  After save_defok   : $CTEST_AFTER_DEFOK"
-echo "  After save_ok      : $CHECK_OUTPUT"
+if [ "$VERBOSE" -eq 1 ]; then
+    echo "Logs saved:"
+    echo "  Initial run        : $CTEST_OUTPUT"
+    echo "  Embedded diff fix  : $CTEST_EMBEDDED_FIX"
+    echo "  After save_defok   : $CTEST_AFTER_DEFOK"
+    echo "  After save_ok      : $CHECK_OUTPUT"
+elif [ "$KEEP_LOGS" -eq 1 ]; then
+    echo "Logs kept in: $LOG_DIR"
+else
+    echo "Logs discarded — re-run with -v to keep them in the repo root."
+fi
