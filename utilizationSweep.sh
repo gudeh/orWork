@@ -16,13 +16,27 @@
 #   -j N           run N sweeps concurrently  (default: 1)
 #   -p PREFIX      FLOW_VARIANT prefix        (default: util)
 #   -m PLAT_HOME   PLATFORM_HOME passed to make (default: unset, or $PLATFORM_HOME)
+#   -c [MODE]      wipe results before each run. DEFAULT IS NO CLEAN; pass -c to
+#                  opt in. Bare -c means floorplan. Modes:
+#                    floorplan - redo 2_..6_, keep synthesis  <- config.mk edits
+#                    all       - clean_all, redo synthesis too <- netlist/SDC edits
+#                    none      - explicit no-op (the default)
+#   -C             shorthand for -c all   (no argument)
 #   -r             report only: re-collect results, run nothing
 #   -h             help
+#
+# IMPORTANT: ORFS decides what to rebuild from RESULT FILES, not from config.mk.
+# If a stage's .odb already exists it is REUSED, so editing config.mk and
+# re-running reports the OLD numbers while still printing "make OK". After
+# changing config.mk, pass -c (floorplan) -- or -c all if you touched the
+# netlist, SDC, or synthesis vars. Nothing is deleted unless you ask.
 #
 # Examples:
 #   ./utilizationSweep.sh -d designs/nangate45/bp_fe_top/config.mk -u "20 30 40 45"
 #   ./utilizationSweep.sh -d designs/sky130hd/aes/config.mk -u "15,20,25" -j 3
 #   ./utilizationSweep.sh -d designs/rapidus2hp/gcd/config.mk -m /platforms -u "50 55"
+#   ./utilizationSweep.sh -d designs/gf12/tinyRocket/config.mk -c all -u "50 60"
+#   ./utilizationSweep.sh -d designs/nangate45/bp_fe_top/config.mk -u "85 90" -c none
 #   ./utilizationSweep.sh -d designs/nangate45/bp_fe_top/config.mk -r
 #
 set -u
@@ -36,13 +50,28 @@ JOBS=1
 PREFIX="util"
 REPORT_ONLY=0
 PLAT_HOME="${PLATFORM_HOME:-}"   # inherit from env if already exported
+CLEAN_MODE="none"                # none | floorplan | all -- default NEVER deletes
 
 DEFAULT_UTILS="20 30 40 50 60 70 75 80 85"
 
-usage() { sed -n '2,27p' "$0" | sed -n 's/^#\( \|$\)\{0,1\}//p'; exit "${1:-0}"; }
+# print the leading comment block (line 2 to the first non-comment line)
+usage() { sed -n '2,/^[^#]/p' "$0" | sed -n 's/^#\( \|$\)\{0,1\}//p'; exit "${1:-0}"; }
 
 # ------------------------------------------------------------------- parse --
-while getopts ":f:d:u:j:p:m:rh" opt; do
+# bash getopts has no optional-argument form, so normalise first: a bare -c
+# (last arg, or followed by another flag) becomes an explicit "-c floorplan".
+ARGV=()
+while [[ $# -gt 0 ]]; do
+  if [[ "$1" == "-c" ]]; then
+    if [[ $# -eq 1 || "$2" == -* ]]; then ARGV+=(-c floorplan); shift
+    else                                  ARGV+=(-c "$2");      shift 2; fi
+  else
+    ARGV+=("$1"); shift
+  fi
+done
+set -- "${ARGV[@]}"
+
+while getopts ":f:d:u:j:p:m:c:CNrh" opt; do
   case "$opt" in
     f) FLOW_DIR="$OPTARG" ;;
     d) DESIGN_CONFIG="$OPTARG" ;;
@@ -50,14 +79,22 @@ while getopts ":f:d:u:j:p:m:rh" opt; do
     j) JOBS="$OPTARG" ;;
     p) PREFIX="$OPTARG" ;;
     m) PLAT_HOME="$OPTARG" ;;
+    c) CLEAN_MODE="$OPTARG" ;;
+    C) CLEAN_MODE="all" ;;    # shorthand, takes no argument
+    N) CLEAN_MODE="none" ;;   # shorthand, takes no argument
     r) REPORT_ONLY=1 ;;
     h) usage 0 ;;
     \?) echo "ERROR: unknown option -$OPTARG" >&2; usage 1 ;;
-    :)  echo "ERROR: -$OPTARG needs an argument" >&2; usage 1 ;;
+    :)  echo "ERROR: -$OPTARG needs an argument" >&2; exit 1 ;;
   esac
 done
 shift $((OPTIND - 1))
 EXTRA_MAKE_ARGS=("$@")   # anything after `--` is passed straight to make
+
+case "$CLEAN_MODE" in
+  none|floorplan|all) ;;
+  *) echo "ERROR: -c must be none, floorplan, or all (got '$CLEAN_MODE')" >&2; exit 1 ;;
+esac
 
 # ------------------------------------------------- locate the flow/ folder --
 # Order: -f flag > $ORFS_FLOW_DIR > walk up from $PWD > walk up from script dir.
@@ -152,13 +189,28 @@ run_one() {
   # PLATFORM_HOME only passed when set -- an empty one breaks stock platforms.
   local plat_arg=()
   [[ -n "$PLAT_HOME" ]] && plat_arg=(PLATFORM_HOME="$PLAT_HOME")
-  ( cd "$FLOW_DIR" && \
-    make DESIGN_CONFIG="$CFG" \
-         FLOW_VARIANT="$variant" \
-         CORE_UTILIZATION="$util" \
-         "${plat_arg[@]}" \
-         "${EXTRA_MAKE_ARGS[@]}" \
-  ) >"$drv" 2>&1
+
+  local mk=(make DESIGN_CONFIG="$CFG" FLOW_VARIANT="$variant"
+            CORE_UTILIZATION="$util" "${plat_arg[@]}")
+
+  # ORFS keys off result files, NOT config.mk. Without a clean, edits to
+  # config.mk (or a new CORE_UTILIZATION) are silently ignored for any stage
+  # whose .odb already exists -- the run "succeeds" using stale results.
+  : >"$drv"
+  case "$CLEAN_MODE" in
+    all)
+      echo "  [util=${util}] clean_all (full rerun incl. synthesis)" | tee -a "$drv" >/dev/null
+      ( cd "$FLOW_DIR" && "${mk[@]}" clean_all ) >>"$drv" 2>&1
+      ;;
+    floorplan)
+      # utilization only affects the die -> keep synthesis, redo 2_ onward
+      echo "  [util=${util}] clean floorplan..finish (synthesis kept)" | tee -a "$drv" >/dev/null
+      ( cd "$FLOW_DIR" && "${mk[@]}" clean_floorplan clean_place clean_cts \
+                                     clean_route clean_finish ) >>"$drv" 2>&1
+      ;;
+  esac
+
+  ( cd "$FLOW_DIR" && "${mk[@]}" "${EXTRA_MAKE_ARGS[@]}" ) >>"$drv" 2>&1
   local rc=$?
   if [[ $rc -eq 0 ]]; then echo "  [util=${util}] make OK"
   else                     echo "  [util=${util}] make FAILED (rc=$rc)"; fi
@@ -174,6 +226,13 @@ if [[ $REPORT_ONLY -eq 0 ]]; then
   echo "   values   : ${UTILS[*]}"
   echo "   parallel : $JOBS"
   [[ -n "$PLAT_HOME" ]] && echo "   plat home: $PLAT_HOME"
+  echo "   clean    : $CLEAN_MODE"
+  case "$CLEAN_MODE" in
+    none)      echo "              (no clean: existing results are REUSED. If you edited" ;;&
+    none)      echo "               config.mk, re-run with -c or the old numbers persist.)" ;;
+    floorplan) echo "              DELETING stages 2_..6_ for each variant (synthesis kept)." ;;
+    all)       echo "              DELETING ALL results for each variant, synthesis included." ;;
+  esac
   [[ ${#EXTRA_MAKE_ARGS[@]} -gt 0 ]] && echo "   make args: ${EXTRA_MAKE_ARGS[*]}"
   echo "=========================================================="
   echo
