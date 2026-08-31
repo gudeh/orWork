@@ -14,9 +14,15 @@
 #       via test/regression.
 #   1. Run all tests  →  ctest_output.txt
 #   2. Update DEF golden files (save_defok) for failed tests
-#   3. Re-run failed tests  →  ctest_after_defok.txt
+#   3. Re-run ONLY the tests updated in step 2  →  ctest_after_defok.txt
 #   4. Update log golden files (save_ok) for still-failed tests
-#   5. Re-run failed tests  →  check_update.txt  (verification)
+#   5. Re-run ONLY the tests updated in step 4  →  check_update.txt
+#
+# Steps 3 and 5 re-run a `ctest -R` regex built from the tests whose goldens
+# were just rewritten, never the whole suite and never `--rerun-failed`.  A test
+# that passed in step 1 is untouched by the golden updates, so re-checking it
+# only costs time; and `--rerun-failed` in step 5 would have replayed step 3's
+# larger failure set, including the tests step 3 had already fixed.
 #   6. Re-verify everything under Bazel — CI builds with Bazel, and its
 #      results do NOT always match this CMake build (see below)
 #
@@ -309,6 +315,51 @@ _parse_failures() {
             }
         }
     ' "$log_file")
+}
+
+# ---------------------------------------------------------------------------
+# Print a ctest -R regex matching exactly the tests currently in module_tests.
+# Test names are "<module>.<test>.<lang>", so anchoring both ends keeps
+# dpl.simple10 from also dragging in dpl.simple10_foo.  Both language variants
+# are matched: a golden update affects the tcl and py runs alike.
+# Prints nothing when module_tests is empty.
+# ---------------------------------------------------------------------------
+# Count the test names currently in module_tests (each covers a tcl and/or py
+# ctest entry, so this is a count of test cases, not of ctest registrations).
+_count_tests() {
+    local module n=0
+    for module in "${!module_tests[@]}"; do
+        for _ in ${module_tests[$module]}; do
+            n=$((n + 1))
+        done
+    done
+    printf '%s' "$n"
+}
+
+_failed_tests_regex() {
+    local -a patterns=()
+    local module test_name
+    for module in "${!module_tests[@]}"; do
+        for test_name in ${module_tests[$module]}; do
+            # Escape regex metacharacters in the literal name parts.
+            local esc_m esc_t
+            esc_m="$(printf '%s' "$module" | sed 's/[][\.^$*+?(){}|]/\\&/g')"
+            esc_t="$(printf '%s' "$test_name" | sed 's/[][\.^$*+?(){}|]/\\&/g')"
+            patterns+=("^${esc_m}\\.${esc_t}\\.(tcl|py)$")
+        done
+    done
+
+    # Never return empty: `ctest -R ""` matches everything, which would silently
+    # turn a targeted re-run back into a full-suite run.  Callers guard against
+    # an empty module_tests, so reaching this is a bug — fail loudly instead.
+    if [ ${#patterns[@]} -eq 0 ]; then
+        echo "Internal error: _failed_tests_regex called with no tests." >&2
+        return 1
+    fi
+
+    local regex
+    regex="$(printf '%s|' "${patterns[@]}")"
+    printf '%s' "${regex%|}"
 }
 
 # ---------------------------------------------------------------------------
@@ -1021,7 +1072,15 @@ echo ""
 # Step 3: Re-run failed tests after defok update
 # ---------------------------------------------------------------------------
 echo "=== Step 3/6: Re-running failed tests after save_defok ==="
-ctest --test-dir "$BUILD_DIR" --rerun-failed --output-on-failure -j "$JOBS" > "$CTEST_AFTER_DEFOK" 2>&1
+# Only the tests whose goldens step 2 rewrote.  Everything else passed in step
+# 1 and nothing has touched it since, so re-running it can only burn time.
+if ! step3_regex="$(_failed_tests_regex)"; then
+    _retain_logs
+    exit 1
+fi
+step3_count=$(_count_tests)
+echo "Re-running $step3_count test(s) whose goldens were updated..."
+ctest --test-dir "$BUILD_DIR" -R "$step3_regex" --output-on-failure -j "$JOBS" > "$CTEST_AFTER_DEFOK" 2>&1
 echo ""
 
 _parse_failures "$CTEST_AFTER_DEFOK"
@@ -1048,7 +1107,16 @@ echo ""
 # Step 5: Re-run to verify everything is now correct
 # ---------------------------------------------------------------------------
 echo "=== Step 5/6: Verifying updates ==="
-ctest --test-dir "$BUILD_DIR" --rerun-failed --output-on-failure -j "$JOBS" > "$CHECK_OUTPUT" 2>&1
+# Scope to the tests step 4 just updated.  --rerun-failed would have replayed
+# step 3's failure set, which is a superset: tests that step 3 fixed would be
+# run again for nothing.
+if ! step5_regex="$(_failed_tests_regex)"; then
+    _retain_logs
+    exit 1
+fi
+step5_count=$(_count_tests)
+echo "Verifying $step5_count test(s) whose log goldens were updated..."
+ctest --test-dir "$BUILD_DIR" -R "$step5_regex" --output-on-failure -j "$JOBS" > "$CHECK_OUTPUT" 2>&1
 echo ""
 
 _parse_failures "$CHECK_OUTPUT"
